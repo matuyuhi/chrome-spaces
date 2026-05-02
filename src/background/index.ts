@@ -8,6 +8,7 @@ import { handleCommand, resolveWindowId } from './commands'
 import {
   createLiveSpace,
   createStaticSpace,
+  createStaticSpaceFromTabs,
   deleteSpace,
   getActiveSpace,
   listSpaces,
@@ -63,6 +64,8 @@ async function handleMessage(msg: Message): Promise<unknown> {
   switch (msg.type) {
     case 'createStatic':
       return createStaticSpace(msg.payload)
+    case 'createStaticFromTabs':
+      return createStaticSpaceFromTabs(msg.payload)
     case 'createLive':
       return createLiveSpace(msg.payload)
     case 'syncLive':

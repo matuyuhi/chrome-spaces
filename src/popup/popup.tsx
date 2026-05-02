@@ -219,6 +219,33 @@ export function App() {
         >
           + Static
         </button>
+        <button
+          className="btn-secondary"
+          title="Group every ungrouped tab in this window into a new Static Space."
+          onClick={async () => {
+            if (windowId === undefined) return
+            setError(undefined)
+            try {
+              const created = await sendMessage({
+                type: 'createStaticFromTabs',
+                payload: {
+                  name: `Space ${spaces.length + 1}`,
+                  color: COLORS[spaces.length % COLORS.length]!,
+                  windowId,
+                },
+              })
+              await refresh()
+              await switchTo(created.id, windowId)
+              await refresh()
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e)
+              console.error('[Spaces] createStaticFromTabs failed', e)
+              setError(`Capture failed: ${message}`)
+            }
+          }}
+        >
+          + Capture
+        </button>
         <button className="btn-secondary" onClick={() => setView('new-live')}>
           + Live Folder
         </button>

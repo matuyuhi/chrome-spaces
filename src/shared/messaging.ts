@@ -16,8 +16,17 @@ export interface CreateLivePayload {
   refreshIntervalMin?: number
 }
 
+export interface CreateStaticFromTabsPayload {
+  name: string
+  color: SpaceColor
+  emoji?: string
+  windowId: number
+  tabIds?: number[]
+}
+
 export type Message =
   | { type: 'createStatic'; payload: CreateStaticPayload }
+  | { type: 'createStaticFromTabs'; payload: CreateStaticFromTabsPayload }
   | { type: 'createLive'; payload: CreateLivePayload }
   | { type: 'syncLive'; spaceId: SpaceId }
   | { type: 'listSpaces'; windowId?: number }
@@ -39,6 +48,7 @@ export type Message =
 
 export interface MessageResponseMap {
   createStatic: Space
+  createStaticFromTabs: Space
   createLive: Space
   syncLive: void
   listSpaces: Space[]

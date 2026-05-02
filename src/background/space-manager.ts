@@ -80,6 +80,69 @@ export async function createStaticSpace(input: CreateStaticSpaceInput): Promise<
   return space
 }
 
+export interface CreateStaticFromTabsInput {
+  name: string
+  color: SpaceColor
+  emoji?: string
+  windowId: number
+  // If omitted, captures every ungrouped tab in the window.
+  tabIds?: number[]
+}
+
+export async function createStaticSpaceFromTabs(
+  input: CreateStaticFromTabsInput,
+): Promise<StaticSpace> {
+  let tabIds = input.tabIds
+  if (tabIds === undefined) {
+    const tabs = await chrome.tabs.query({ windowId: input.windowId })
+    tabIds = tabs
+      .filter((t) => t.groupId === TAB_GROUP_ID_NONE && typeof t.id === 'number')
+      .map((t) => t.id as number)
+  }
+  if (tabIds.length === 0) {
+    throw new Error('No ungrouped tabs to capture in this window.')
+  }
+
+  const groupId = await chrome.tabs.group({
+    createProperties: { windowId: input.windowId },
+    tabIds,
+  })
+  await safeTabGroupUpdate(groupId, {
+    title: input.name,
+    color: input.color,
+    collapsed: false,
+  })
+
+  // Prefer the currently-active tab as lastActiveTabId so switching back
+  // to this space lands on what the user was just looking at.
+  const [activeTab] = await chrome.tabs.query({ windowId: input.windowId, active: true })
+  const activeId = typeof activeTab?.id === 'number' ? activeTab.id : undefined
+  const lastActiveTabId = activeId && tabIds.includes(activeId) ? activeId : tabIds[0]
+
+  const id = uid()
+  const ts = now()
+  const space: StaticSpace = {
+    kind: 'static',
+    id,
+    name: input.name,
+    color: input.color,
+    emoji: input.emoji,
+    groupId,
+    windowId: input.windowId,
+    order: 0,
+    lastActiveTabId,
+    createdAt: ts,
+    lastAccessedAt: ts,
+  }
+
+  await updateStore((s) => {
+    space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
+    s.spaces[id] = space
+  })
+
+  return space
+}
+
 export interface CreateLiveSpaceInput {
   name: string
   color: SpaceColor

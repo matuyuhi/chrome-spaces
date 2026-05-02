@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   createLiveSpace,
   createStaticSpace,
+  createStaticSpaceFromTabs,
   switchTo,
   listSpaces,
   deleteSpace,
@@ -96,6 +97,37 @@ describe('space-manager', () => {
     await reorderSpaces(1, [c.id, a.id, b.id])
     const list = await listSpaces(1)
     expect(list.map((s) => s.id)).toEqual([c.id, a.id, b.id])
+  })
+
+  it('createStaticSpaceFromTabs groups every ungrouped tab in the window', async () => {
+    const t1 = await chrome.tabs.create({ windowId: 1 })
+    const t2 = await chrome.tabs.create({ windowId: 1 })
+    const t3 = await chrome.tabs.create({ windowId: 1 })
+    // A tab in another window should not be captured.
+    const otherWin = await chrome.tabs.create({ windowId: 2 })
+
+    const space = await createStaticSpaceFromTabs({
+      name: 'Captured',
+      color: 'cyan',
+      windowId: 1,
+    })
+
+    expect(space.kind).toBe('static')
+    expect(mock.tabs.get(t1.id!)?.groupId).toBe(space.groupId)
+    expect(mock.tabs.get(t2.id!)?.groupId).toBe(space.groupId)
+    expect(mock.tabs.get(t3.id!)?.groupId).toBe(space.groupId)
+    expect(mock.tabs.get(otherWin.id!)?.groupId).toBe(-1)
+    expect(mock.groups.get(space.groupId)?.title).toBe('Captured')
+  })
+
+  it('createStaticSpaceFromTabs throws when no ungrouped tabs exist', async () => {
+    // Pre-grouped tab + same-window's only-grouped state
+    const t = await chrome.tabs.create({ windowId: 1 })
+    await chrome.tabs.group({ createProperties: { windowId: 1 }, tabIds: [t.id!] })
+
+    await expect(
+      createStaticSpaceFromTabs({ name: 'X', color: 'blue', windowId: 1 }),
+    ).rejects.toThrow('No ungrouped tabs')
   })
 
   it('updateLiveSpace replaces source and re-schedules on interval change', async () => {
