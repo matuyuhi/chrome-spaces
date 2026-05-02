@@ -1,0 +1,381 @@
+import { useCallback, useEffect, useState } from 'react'
+import {
+  deleteSpace,
+  getActiveSpace,
+  listSpaces,
+  renameSpace,
+  setSpaceColor,
+  switchTo,
+} from '../background/space-manager'
+import { getGitHubToken, setGitHubToken } from '../background/secret-storage'
+import { isLive, type Space, type SpaceColor, type SpaceId } from '../shared/types'
+import { sendMessage } from '../shared/messaging'
+import { LiveSpaceForm, type LiveSpaceFormResult } from './live-space-config'
+
+const COLORS: SpaceColor[] = [
+  'blue',
+  'red',
+  'green',
+  'yellow',
+  'cyan',
+  'purple',
+  'pink',
+  'orange',
+  'grey',
+]
+
+const COLOR_HEX: Record<SpaceColor, string> = {
+  grey: '#9aa0a6',
+  blue: '#1a73e8',
+  red: '#d93025',
+  yellow: '#f9ab00',
+  green: '#188038',
+  pink: '#d01884',
+  purple: '#9334e6',
+  cyan: '#007b83',
+  orange: '#fa7b17',
+}
+
+type View = 'list' | 'new-live' | 'settings'
+
+export function App() {
+  const [view, setView] = useState<View>('list')
+  const [spaces, setSpaces] = useState<Space[]>([])
+  const [activeId, setActiveId] = useState<string | undefined>()
+  const [windowId, setWindowId] = useState<number | undefined>()
+  const [editingId, setEditingId] = useState<string | undefined>()
+  const [menuOpenId, setMenuOpenId] = useState<string | undefined>()
+  const [error, setError] = useState<string | undefined>()
+
+  const refresh = useCallback(async () => {
+    const win = await chrome.windows.getCurrent()
+    if (typeof win.id !== 'number') return
+    setWindowId(win.id)
+    setSpaces(await listSpaces(win.id))
+    setActiveId((await getActiveSpace(win.id))?.id)
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  if (view === 'settings') {
+    return <SettingsPanel onClose={() => setView('list')} />
+  }
+
+  if (view === 'new-live') {
+    return (
+      <div className="popup-root">
+        <LiveSpaceForm
+          defaultColor={COLORS[spaces.length % COLORS.length]!}
+          onCancel={() => setView('list')}
+          onSubmit={async (input: LiveSpaceFormResult) => {
+            if (windowId === undefined) return
+            try {
+              const space = await sendMessage<{ id: SpaceId }>({
+                type: 'createLive',
+                payload: {
+                  name: input.name,
+                  color: input.color,
+                  windowId,
+                  source: input.source,
+                  refreshIntervalMin: input.refreshIntervalMin,
+                },
+              })
+              setView('list')
+              await refresh()
+              void sendMessage({ type: 'syncLive', spaceId: space.id }).then(() => refresh())
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e)
+              console.error('[Spaces] createLive failed', e)
+              setError(`Create failed: ${message}`)
+              setView('list')
+            }
+          }}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="popup-root">
+      <header className="header">
+        <h1>Spaces</h1>
+        <div className="header-actions">
+          <button
+            className="btn-icon"
+            aria-label="Settings"
+            onClick={() => setView('settings')}
+          >
+            ⚙
+          </button>
+        </div>
+      </header>
+
+      <div className="new-buttons">
+        <button
+          className="btn-primary"
+          onClick={async () => {
+            if (windowId === undefined) return
+            setError(undefined)
+            try {
+              const created = await sendMessage<{ id: SpaceId }>({
+                type: 'createStatic',
+                payload: {
+                  name: `Space ${spaces.length + 1}`,
+                  color: COLORS[spaces.length % COLORS.length]!,
+                  windowId,
+                },
+              })
+              await refresh()
+              await switchTo(created.id, windowId)
+              await refresh()
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e)
+              console.error('[Spaces] createStatic failed', e)
+              setError(`Create failed: ${message}`)
+            }
+          }}
+        >
+          + Static
+        </button>
+        <button className="btn-secondary" onClick={() => setView('new-live')}>
+          + Live Folder
+        </button>
+      </div>
+
+      {error && (
+        <div className="error-banner" role="alert">
+          {error}
+        </div>
+      )}
+
+      {spaces.length === 0 ? (
+        <p className="empty">No spaces yet.</p>
+      ) : (
+        <ul className="space-list">
+          {spaces.map((s) => (
+            <SpaceRow
+              key={s.id}
+              space={s}
+              active={s.id === activeId}
+              editing={editingId === s.id}
+              menuOpen={menuOpenId === s.id}
+              onSwitch={async () => {
+                if (windowId === undefined || editingId) return
+                await switchTo(s.id, windowId)
+                await refresh()
+              }}
+              onStartEdit={() => {
+                setEditingId(s.id)
+                setMenuOpenId(undefined)
+              }}
+              onCommitEdit={async (name) => {
+                setEditingId(undefined)
+                if (name.trim() && name !== s.name) {
+                  await renameSpace(s.id, name.trim())
+                  await refresh()
+                }
+              }}
+              onCancelEdit={() => setEditingId(undefined)}
+              onToggleMenu={() => setMenuOpenId(menuOpenId === s.id ? undefined : s.id)}
+              onColorChange={async (c) => {
+                await setSpaceColor(s.id, c)
+                setMenuOpenId(undefined)
+                await refresh()
+              }}
+              onSyncNow={async () => {
+                setMenuOpenId(undefined)
+                try {
+                  await sendMessage({ type: 'syncLive', spaceId: s.id })
+                } catch (e) {
+                  console.error('[Spaces] syncLive failed', e)
+                }
+                await refresh()
+              }}
+              onDelete={async (closeTabs) => {
+                await deleteSpace(s.id, { closeTabs })
+                setMenuOpenId(undefined)
+                await refresh()
+              }}
+            />
+          ))}
+        </ul>
+      )}
+
+      <footer className="footer">
+        <button
+          className="btn-link"
+          onClick={() => void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })}
+        >
+          Configure shortcuts →
+        </button>
+      </footer>
+    </div>
+  )
+}
+
+interface SpaceRowProps {
+  space: Space
+  active: boolean
+  editing: boolean
+  menuOpen: boolean
+  onSwitch: () => void
+  onStartEdit: () => void
+  onCommitEdit: (name: string) => void
+  onCancelEdit: () => void
+  onToggleMenu: () => void
+  onColorChange: (color: SpaceColor) => void
+  onSyncNow: () => void
+  onDelete: (closeTabs: boolean) => void
+}
+
+function SpaceRow(props: SpaceRowProps) {
+  const { space, active, editing, menuOpen } = props
+  const [draft, setDraft] = useState(space.name)
+
+  useEffect(() => {
+    if (editing) setDraft(space.name)
+  }, [editing, space.name])
+
+  const live = isLive(space) ? space : undefined
+  const errorTooltip = live?.lastSyncError ?? ''
+
+  return (
+    <li className={`space-row ${active ? 'is-active' : ''}`}>
+      <button
+        className="space-main"
+        onClick={editing ? undefined : props.onSwitch}
+        disabled={editing}
+      >
+        <span className="dot" style={{ background: COLOR_HEX[space.color] }} aria-hidden />
+        {editing ? (
+          <input
+            className="name-input"
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => props.onCommitEdit(draft)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') props.onCommitEdit(draft)
+              if (e.key === 'Escape') props.onCancelEdit()
+            }}
+          />
+        ) : (
+          <span className="space-name">{space.name}</span>
+        )}
+        {live && (
+          <span className="badge" title={errorTooltip || 'Live folder'}>
+            {live.lastSyncError ? '⚠' : 'live'}
+          </span>
+        )}
+      </button>
+      <button
+        className="btn-menu"
+        aria-label="More"
+        onClick={(e) => {
+          e.stopPropagation()
+          props.onToggleMenu()
+        }}
+      >
+        ⋯
+      </button>
+      {menuOpen && (
+        <div className="menu" role="menu">
+          {live && (
+            <>
+              <button onClick={props.onSyncNow}>Sync now</button>
+              {live.lastSyncError && <div className="menu-error">{live.lastSyncError}</div>}
+              <div className="menu-divider" />
+            </>
+          )}
+          <button onClick={props.onStartEdit}>Rename</button>
+          <div className="menu-section">Color</div>
+          <div className="color-grid">
+            {COLORS.map((c) => (
+              <button
+                key={c}
+                className={`color-swatch ${c === space.color ? 'is-current' : ''}`}
+                style={{ background: COLOR_HEX[c] }}
+                onClick={() => props.onColorChange(c)}
+                aria-label={`Color ${c}`}
+              />
+            ))}
+          </div>
+          <div className="menu-divider" />
+          <button className="danger" onClick={() => props.onDelete(false)}>
+            Delete (keep tabs)
+          </button>
+          <button className="danger" onClick={() => props.onDelete(true)}>
+            Delete + close tabs
+          </button>
+        </div>
+      )}
+    </li>
+  )
+}
+
+function SettingsPanel({ onClose }: { onClose: () => void }) {
+  const [token, setToken] = useState('')
+  const [hasToken, setHasToken] = useState<boolean | undefined>(undefined)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    void getGitHubToken().then((t) => setHasToken(!!t))
+  }, [])
+
+  const handleSave = async () => {
+    await setGitHubToken(token || undefined)
+    setHasToken(!!token)
+    setToken('')
+    setSaved(true)
+    setTimeout(() => setSaved(false), 1500)
+  }
+
+  return (
+    <div className="popup-root">
+      <header className="header">
+        <button className="btn-link" onClick={onClose}>
+          ← Back
+        </button>
+        <h1>Settings</h1>
+        <span />
+      </header>
+
+      <section className="settings-section">
+        <h2>GitHub PAT</h2>
+        <p className="muted">
+          Used by Live Folders. Stored only in <code>chrome.storage.local</code> on this device.
+        </p>
+        <p className="muted">
+          Status: {hasToken === undefined ? '…' : hasToken ? '✓ token saved' : '— no token'}
+        </p>
+        <input
+          type="password"
+          autoComplete="off"
+          placeholder="ghp_..."
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+        />
+        <div className="settings-actions">
+          <button className="btn-primary" onClick={handleSave} disabled={!token && !hasToken}>
+            {token ? 'Save token' : hasToken ? 'Clear token' : 'Save'}
+          </button>
+          {saved && <span className="muted">Saved.</span>}
+        </div>
+        <p className="muted">
+          Required scopes: <code>repo</code> (private PRs) or just <code>public_repo</code> (public only).
+          Generate at{' '}
+          <a
+            href="https://github.com/settings/tokens?type=beta"
+            target="_blank"
+            rel="noreferrer"
+          >
+            github.com/settings/tokens
+          </a>
+          .
+        </p>
+      </section>
+    </div>
+  )
+}

@@ -1,0 +1,97 @@
+import { type LiveSource } from '../../../shared/types'
+
+export interface PullRequestRef {
+  externalId: string
+  url: string
+  title: string
+  number: number
+  repo: string
+  state: string
+  isDraft: boolean
+  updatedAt: string
+}
+
+export class GitHubError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'GitHubError'
+  }
+}
+
+interface SearchIssueItem {
+  html_url: string
+  title: string
+  number: number
+  state: string
+  draft?: boolean
+  updated_at: string
+}
+
+interface SearchResponse {
+  items: SearchIssueItem[]
+  total_count: number
+  incomplete_results: boolean
+}
+
+const PR_URL_RE = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/
+
+export function buildQuery(source: LiveSource): string {
+  if (source.type !== 'github-prs') {
+    throw new Error(`Unsupported source type: ${(source as { type: string }).type}`)
+  }
+  const userSpec = source.preset === 'custom' ? null : (source.user?.trim() || '@me')
+  switch (source.preset) {
+    case 'review-requested':
+      return `is:pr is:open review-requested:${userSpec}`
+    case 'assigned':
+      return `is:pr is:open assignee:${userSpec}`
+    case 'authored':
+      return `is:pr is:open author:${userSpec}`
+    case 'custom':
+      return source.query
+  }
+}
+
+export function parseItem(item: SearchIssueItem): PullRequestRef {
+  const match = PR_URL_RE.exec(item.html_url)
+  if (!match) throw new Error(`Unrecognized PR URL: ${item.html_url}`)
+  const repo = match[1]!
+  return {
+    externalId: `${repo}#${item.number}`,
+    url: item.html_url,
+    title: item.title,
+    number: item.number,
+    repo,
+    state: item.state,
+    isDraft: item.draft ?? false,
+    updatedAt: item.updated_at,
+  }
+}
+
+export async function fetchPullRequests(
+  source: LiveSource,
+  token: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PullRequestRef[]> {
+  const query = buildQuery(source)
+  const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=50`
+
+  const res = await fetchImpl(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  })
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new GitHubError(res.status, `GitHub API ${res.status}: ${body || res.statusText}`)
+  }
+
+  const data = (await res.json()) as SearchResponse
+  return data.items.map(parseItem)
+}

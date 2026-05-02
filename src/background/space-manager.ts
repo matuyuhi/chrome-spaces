@@ -1,0 +1,312 @@
+import {
+  type LiveSource,
+  type LiveSpace,
+  type Space,
+  type SpaceId,
+  type StaticSpace,
+  type SpaceColor,
+  TAB_GROUP_ID_NONE,
+  isLive,
+} from '../shared/types'
+import { loadStore, updateStore } from './storage'
+import {
+  markStarterTab,
+  pauseAutoGrouping,
+  resumeAutoGrouping,
+  unmarkStarterTab,
+} from './inflight'
+import { scheduleSync, unscheduleSync } from './live/alarms'
+
+const now = (): number => Date.now()
+const uid = (): string => crypto.randomUUID()
+
+export interface CreateStaticSpaceInput {
+  name: string
+  color: SpaceColor
+  emoji?: string
+  windowId: number
+}
+
+export async function createStaticSpace(input: CreateStaticSpaceInput): Promise<StaticSpace> {
+  console.log('[Spaces] createStaticSpace start', input)
+  pauseAutoGrouping()
+  let space: StaticSpace
+  try {
+    const tab = await chrome.tabs.create({ windowId: input.windowId, active: false })
+    console.log('[Spaces] starter tab created', tab.id)
+    if (typeof tab.id !== 'number') throw new Error('Failed to create starter tab')
+    markStarterTab(tab.id)
+
+    let groupId: number
+    try {
+      groupId = await chrome.tabs.group({
+        createProperties: { windowId: input.windowId },
+        tabIds: [tab.id],
+      })
+      console.log('[Spaces] group created', groupId)
+      await chrome.tabGroups.update(groupId, {
+        title: input.name,
+        color: input.color,
+        collapsed: false,
+      })
+    } finally {
+      unmarkStarterTab(tab.id)
+    }
+
+    const id = uid()
+    const ts = now()
+    space = {
+      kind: 'static',
+      id,
+      name: input.name,
+      color: input.color,
+      emoji: input.emoji,
+      groupId,
+      windowId: input.windowId,
+      order: 0,
+      lastActiveTabId: tab.id,
+      createdAt: ts,
+      lastAccessedAt: ts,
+    }
+
+    await updateStore((s) => {
+      space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
+      s.spaces[id] = space
+    })
+  } finally {
+    resumeAutoGrouping()
+  }
+
+  return space
+}
+
+export interface CreateLiveSpaceInput {
+  name: string
+  color: SpaceColor
+  emoji?: string
+  windowId: number
+  source: LiveSource
+  refreshIntervalMin?: number
+}
+
+export async function createLiveSpace(input: CreateLiveSpaceInput): Promise<LiveSpace> {
+  pauseAutoGrouping()
+  let space: LiveSpace
+  try {
+    const tab = await chrome.tabs.create({ windowId: input.windowId, active: false })
+    if (typeof tab.id !== 'number') throw new Error('Failed to create starter tab')
+    markStarterTab(tab.id)
+
+    let groupId: number
+    try {
+      groupId = await chrome.tabs.group({
+        createProperties: { windowId: input.windowId },
+        tabIds: [tab.id],
+      })
+      await chrome.tabGroups.update(groupId, {
+        title: input.name,
+        color: input.color,
+        collapsed: false,
+      })
+    } finally {
+      unmarkStarterTab(tab.id)
+    }
+
+    const id = uid()
+    const ts = now()
+    space = {
+      kind: 'live',
+      id,
+      name: input.name,
+      color: input.color,
+      emoji: input.emoji,
+      groupId,
+      windowId: input.windowId,
+      order: 0,
+      lastActiveTabId: tab.id,
+      createdAt: ts,
+      lastAccessedAt: ts,
+      source: input.source,
+      refreshIntervalMin: input.refreshIntervalMin ?? 5,
+      managedTabs: [],
+      starterTabId: tab.id,
+    }
+
+    await updateStore((s) => {
+      space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
+      s.spaces[id] = space
+    })
+
+    await scheduleSync(id, space.refreshIntervalMin)
+  } finally {
+    resumeAutoGrouping()
+  }
+
+  return space
+}
+
+export async function renameSpace(id: SpaceId, name: string): Promise<void> {
+  await updateStore((s) => {
+    const sp = s.spaces[id]
+    if (sp) sp.name = name
+  })
+  const sp = (await loadStore()).spaces[id]
+  if (sp && sp.groupId !== TAB_GROUP_ID_NONE) {
+    await safeTabGroupUpdate(sp.groupId, { title: name })
+  }
+}
+
+export async function setSpaceColor(id: SpaceId, color: SpaceColor): Promise<void> {
+  await updateStore((s) => {
+    const sp = s.spaces[id]
+    if (sp) sp.color = color
+  })
+  const sp = (await loadStore()).spaces[id]
+  if (sp && sp.groupId !== TAB_GROUP_ID_NONE) {
+    await safeTabGroupUpdate(sp.groupId, { color })
+  }
+}
+
+export async function setSpaceEmoji(id: SpaceId, emoji: string | undefined): Promise<void> {
+  await updateStore((s) => {
+    const sp = s.spaces[id]
+    if (sp) sp.emoji = emoji
+  })
+}
+
+export async function deleteSpace(id: SpaceId, options: { closeTabs: boolean }): Promise<void> {
+  const store = await loadStore()
+  const space = store.spaces[id]
+  if (!space) return
+
+  if (isLive(space)) await unscheduleSync(id)
+
+  if (options.closeTabs && space.groupId !== TAB_GROUP_ID_NONE) {
+    try {
+      const tabs = await chrome.tabs.query({ groupId: space.groupId })
+      const ids = tabs.map((t) => t.id).filter((tid): tid is number => typeof tid === 'number')
+      if (ids.length > 0) await chrome.tabs.remove(ids)
+    } catch {
+      // Group already gone — nothing to close.
+    }
+  }
+
+  await updateStore((s) => {
+    delete s.spaces[id]
+    for (const [winId, activeId] of Object.entries(s.activeSpaceByWindow)) {
+      if (activeId === id) delete s.activeSpaceByWindow[Number(winId)]
+    }
+  })
+}
+
+export async function switchTo(spaceId: SpaceId, windowId?: number): Promise<void> {
+  const store = await loadStore()
+  const target = store.spaces[spaceId]
+  if (!target) return
+  const winId = windowId ?? target.windowId
+
+  // Persist active first so the onTabGroupUpdated handler does not see a
+  // stale activeSpaceByWindow when our own tabGroups.update events fire,
+  // which would otherwise cause a recursive switchTo storm and burn through
+  // the storage write quota.
+  await updateStore((s) => {
+    s.activeSpaceByWindow[winId] = spaceId
+    const sp = s.spaces[spaceId]
+    if (sp) sp.lastAccessedAt = now()
+  })
+
+  const sameWindow = Object.values(store.spaces).filter((s) => s.windowId === winId)
+
+  for (const s of sameWindow) {
+    if (s.id === spaceId) continue
+    if (s.groupId === TAB_GROUP_ID_NONE) continue
+    await safeTabGroupUpdate(s.groupId, { collapsed: true })
+  }
+
+  if (target.groupId !== TAB_GROUP_ID_NONE) {
+    await safeTabGroupUpdate(target.groupId, { collapsed: false })
+  }
+
+  let activated = false
+  if (target.lastActiveTabId !== undefined) {
+    try {
+      await chrome.tabs.update(target.lastActiveTabId, { active: true })
+      activated = true
+    } catch {
+      // tab gone; fall through
+    }
+  }
+  if (!activated && target.groupId !== TAB_GROUP_ID_NONE) {
+    try {
+      const tabs = await chrome.tabs.query({ groupId: target.groupId })
+      const firstId = tabs[0]?.id
+      if (typeof firstId === 'number') await chrome.tabs.update(firstId, { active: true })
+    } catch {
+      /* nothing to activate */
+    }
+  }
+}
+
+export async function getSpace(id: SpaceId): Promise<Space | undefined> {
+  return (await loadStore()).spaces[id]
+}
+
+export async function listSpaces(windowId?: number): Promise<Space[]> {
+  const store = await loadStore()
+  const all = Object.values(store.spaces)
+  const filtered = windowId === undefined ? all : all.filter((s) => s.windowId === windowId)
+  return filtered.sort((a, b) => a.order - b.order)
+}
+
+export async function getActiveSpace(windowId: number): Promise<Space | undefined> {
+  const store = await loadStore()
+  const id = store.activeSpaceByWindow[windowId]
+  return id ? store.spaces[id] : undefined
+}
+
+export async function findSpaceByGroupId(
+  groupId: number,
+  windowId?: number,
+): Promise<Space | undefined> {
+  const store = await loadStore()
+  return Object.values(store.spaces).find(
+    (s) => s.groupId === groupId && (windowId === undefined || s.windowId === windowId),
+  )
+}
+
+export async function setLastActiveTab(windowId: number, tabId: number): Promise<void> {
+  // Skip the write if the value would not change. This keeps rapid tab
+  // navigation from generating one storage write per onActivated event.
+  const store = await loadStore()
+  const activeId = store.activeSpaceByWindow[windowId]
+  if (!activeId) return
+  const sp = store.spaces[activeId]
+  if (!sp || sp.lastActiveTabId === tabId) return
+
+  await updateStore((s) => {
+    const id = s.activeSpaceByWindow[windowId]
+    if (!id) return
+    const space = s.spaces[id]
+    if (space) space.lastActiveTabId = tabId
+  })
+}
+
+export async function reorderSpaces(windowId: number, orderedIds: SpaceId[]): Promise<void> {
+  await updateStore((s) => {
+    orderedIds.forEach((id, index) => {
+      const sp = s.spaces[id]
+      if (sp && sp.windowId === windowId) sp.order = index
+    })
+  })
+}
+
+async function safeTabGroupUpdate(
+  groupId: number,
+  changes: chrome.tabGroups.UpdateProperties,
+): Promise<void> {
+  try {
+    await chrome.tabGroups.update(groupId, changes)
+  } catch {
+    // Group may have been removed by the user; reconcile handles cleanup.
+  }
+}
