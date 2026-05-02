@@ -5,7 +5,7 @@ export default defineManifest({
   name: 'Spaces',
   version: '0.1.0',
   description: 'Arc-like workspace switcher: Tab Group based Spaces with GitHub PR live folders',
-  permissions: ['tabs', 'tabGroups', 'storage', 'alarms'],
+  permissions: ['tabs', 'tabGroups', 'storage', 'alarms', 'contextMenus'],
   host_permissions: ['https://api.github.com/*'],
   background: {
     service_worker: 'src/background/index.ts',
@@ -26,5 +26,6 @@ export default defineManifest({
     'switch-space-8': { description: 'Switch to Space 8' },
     'switch-space-9': { description: 'Switch to Space 9' },
     'new-space': { description: 'Create new Space' },
+    'reset-current-tab': { description: 'Reset current tab to its base URL' },
   },
 })

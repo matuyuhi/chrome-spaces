@@ -381,6 +381,90 @@ export async function setLastActiveTab(windowId: number, tabId: number): Promise
   })
 }
 
+export async function pinTab(tabId: number, baseUrl: string): Promise<Space | undefined> {
+  let groupId: number | undefined
+  try {
+    const tab = await chrome.tabs.get(tabId)
+    if (typeof tab.groupId === 'number') groupId = tab.groupId
+  } catch {
+    return undefined
+  }
+  if (groupId === undefined || groupId === TAB_GROUP_ID_NONE) return undefined
+  const store = await loadStore()
+  const space = Object.values(store.spaces).find((sp) => sp.groupId === groupId)
+  if (!space) return undefined
+  await updateStore((s) => {
+    const sp = s.spaces[space.id]
+    if (!sp) return
+    if (!sp.pinnedTabs) sp.pinnedTabs = {}
+    sp.pinnedTabs[tabId] = baseUrl
+  })
+  return space
+}
+
+export async function unpinTab(tabId: number): Promise<void> {
+  await updateStore((s) => {
+    for (const sp of Object.values(s.spaces)) {
+      if (sp.pinnedTabs && tabId in sp.pinnedTabs) {
+        delete sp.pinnedTabs[tabId]
+        if (Object.keys(sp.pinnedTabs).length === 0) sp.pinnedTabs = undefined
+      }
+    }
+  })
+}
+
+export async function resolveBaseUrl(tabId: number): Promise<string | undefined> {
+  const store = await loadStore()
+  for (const sp of Object.values(store.spaces)) {
+    if (isLive(sp)) {
+      const managed = sp.managedTabs.find((m) => m.tabId === tabId)
+      if (managed) return managed.url
+    }
+    if (sp.pinnedTabs && tabId in sp.pinnedTabs) {
+      return sp.pinnedTabs[tabId]
+    }
+  }
+  return undefined
+}
+
+export async function resetTabToBase(tabId: number): Promise<boolean> {
+  const url = await resolveBaseUrl(tabId)
+  if (!url) return false
+  try {
+    await chrome.tabs.update(tabId, { url })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function dropPinForTab(tabId: number): Promise<void> {
+  // Same as unpinTab but reads conditionally to avoid spurious writes when
+  // the closed tab was never pinned (the common case on every tab close).
+  const store = await loadStore()
+  const hasPin = Object.values(store.spaces).some(
+    (sp) => sp.pinnedTabs && tabId in sp.pinnedTabs,
+  )
+  if (!hasPin) return
+  await unpinTab(tabId)
+}
+
+export async function reconcilePinnedTabs(): Promise<void> {
+  const allTabs = await chrome.tabs.query({})
+  const liveIds = new Set(
+    allTabs.map((t) => t.id).filter((id): id is number => typeof id === 'number'),
+  )
+  await updateStore((s) => {
+    for (const sp of Object.values(s.spaces)) {
+      if (!sp.pinnedTabs) continue
+      for (const idStr of Object.keys(sp.pinnedTabs)) {
+        if (!liveIds.has(Number(idStr))) delete sp.pinnedTabs[Number(idStr)]
+      }
+      if (Object.keys(sp.pinnedTabs).length === 0) sp.pinnedTabs = undefined
+    }
+  })
+}
+
 export async function reorderSpaces(windowId: number, orderedIds: SpaceId[]): Promise<void> {
   await updateStore((s) => {
     orderedIds.forEach((id, index) => {

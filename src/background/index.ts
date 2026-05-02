@@ -3,7 +3,9 @@ import {
   onTabActivated,
   onTabGroupUpdated,
   onTabGroupRemoved,
+  onTabRemoved,
 } from './handlers'
+import { handleContextMenuClick, installContextMenus } from './context-menus'
 import { handleCommand, resolveWindowId } from './commands'
 import {
   createLiveSpace,
@@ -14,6 +16,7 @@ import {
   listSpaces,
   renameSpace,
   reorderSpaces,
+  reconcilePinnedTabs,
   setSpaceColor,
   setSpaceEmoji,
   switchTo,
@@ -29,6 +32,8 @@ import { handleAlarm, reconcileAlarms } from './live/alarms'
 async function bootstrap(adopt: boolean): Promise<void> {
   await reconcile({ adoptExistingGroups: adopt })
   await reconcileAlarms()
+  await reconcilePinnedTabs()
+  await installContextMenus()
 }
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -119,4 +124,12 @@ chrome.tabGroups.onUpdated.addListener((group) => {
 
 chrome.tabGroups.onRemoved.addListener((group) => {
   void onTabGroupRemoved(group)
+})
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void onTabRemoved(tabId)
+})
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  void handleContextMenuClick(info, tab)
 })

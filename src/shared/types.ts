@@ -13,6 +13,10 @@ export interface BaseSpace {
   lastActiveTabId?: number
   createdAt: number
   lastAccessedAt: number
+  // Map of tabId → base URL. Pressing the reset trigger snaps the tab back
+  // to its base URL (Arc's pinned-tab "snap-back"). For LiveSpace tabs the
+  // managedTab.url takes precedence — see space-manager.resolveBaseUrl.
+  pinnedTabs?: Record<number, string>
 }
 
 export interface StaticSpace extends BaseSpace {

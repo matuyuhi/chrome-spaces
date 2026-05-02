@@ -3,17 +3,24 @@ import {
   createLiveSpace,
   createStaticSpace,
   createStaticSpaceFromTabs,
+  dropPinForTab,
   switchTo,
   listSpaces,
   deleteSpace,
+  pinTab,
+  reconcilePinnedTabs,
   renameSpace,
+  resetTabToBase,
+  resolveBaseUrl,
   setSpaceColor,
   findSpaceByGroupId,
   reorderSpaces,
   getActiveSpace,
+  unpinTab,
   updateLiveSpace,
 } from './space-manager'
 import { isLive } from '../shared/types'
+import { updateStore } from './storage'
 import { setupChromeMock, type ChromeMock } from './test-utils'
 
 describe('space-manager', () => {
@@ -128,6 +135,89 @@ describe('space-manager', () => {
     await expect(
       createStaticSpaceFromTabs({ name: 'X', color: 'blue', windowId: 1 }),
     ).rejects.toThrow('No ungrouped tabs')
+  })
+
+  it('pinTab persists base URL on the tab\'s Space', async () => {
+    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
+    const tab = await chrome.tabs.create({ windowId: 1 })
+    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
+    await pinTab(tab.id!, 'https://example.com/home')
+    const stored = (await listSpaces(1))[0]
+    expect(stored?.pinnedTabs?.[tab.id!]).toBe('https://example.com/home')
+  })
+
+  it('resolveBaseUrl prefers managedTab.url over pinnedTabs', async () => {
+    const live = await createLiveSpace({
+      name: 'PRs',
+      color: 'blue',
+      windowId: 1,
+      source: { type: 'github-prs', preset: 'review-requested' },
+      refreshIntervalMin: 5,
+    })
+    // Inject a managed tab manually (bypassing sync) for the test.
+    const managedTabId = 999
+    await updateStore((s) => {
+      const sp = s.spaces[live.id]
+      if (sp && sp.kind === 'live') {
+        sp.managedTabs = [
+          {
+            externalId: 'a/b#1',
+            url: 'https://github.com/a/b/pull/1',
+            tabId: managedTabId,
+            addedAt: 0,
+          },
+        ]
+        sp.pinnedTabs = { [managedTabId]: 'https://example.com/override' }
+      }
+    })
+    expect(await resolveBaseUrl(managedTabId)).toBe('https://github.com/a/b/pull/1')
+  })
+
+  it('resetTabToBase navigates the tab back to its base URL', async () => {
+    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
+    const tab = await chrome.tabs.create({ windowId: 1, url: 'https://example.com/page' })
+    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
+    await pinTab(tab.id!, 'https://example.com/home')
+    // Simulate the user navigating away.
+    await chrome.tabs.update(tab.id!, { url: 'https://example.com/page/deep' })
+    const ok = await resetTabToBase(tab.id!)
+    expect(ok).toBe(true)
+    expect(mock.tabs.get(tab.id!)?.url).toBe('https://example.com/home')
+  })
+
+  it('resetTabToBase returns false when no base URL is known', async () => {
+    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
+    const tab = await chrome.tabs.create({ windowId: 1 })
+    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
+    expect(await resetTabToBase(tab.id!)).toBe(false)
+  })
+
+  it('unpinTab removes the entry and clears the field when empty', async () => {
+    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
+    const tab = await chrome.tabs.create({ windowId: 1 })
+    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
+    await pinTab(tab.id!, 'https://example.com/home')
+    await unpinTab(tab.id!)
+    expect((await listSpaces(1))[0]?.pinnedTabs).toBeUndefined()
+  })
+
+  it('dropPinForTab handles an already-unpinned tab without writes', async () => {
+    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
+    const tab = await chrome.tabs.create({ windowId: 1 })
+    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
+    await dropPinForTab(tab.id!) // no-op, must not throw
+    expect((await listSpaces(1))[0]?.pinnedTabs).toBeUndefined()
+  })
+
+  it('reconcilePinnedTabs drops entries for tabs that no longer exist', async () => {
+    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
+    const tab = await chrome.tabs.create({ windowId: 1 })
+    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
+    await pinTab(tab.id!, 'https://example.com/home')
+    // Pretend the tab vanished without firing onRemoved.
+    mock.tabs.delete(tab.id!)
+    await reconcilePinnedTabs()
+    expect((await listSpaces(1))[0]?.pinnedTabs).toBeUndefined()
   })
 
   it('updateLiveSpace replaces source and re-schedules on interval change', async () => {

@@ -1,4 +1,5 @@
 import {
+  dropPinForTab,
   findSpaceByGroupId,
   getActiveSpace,
   setLastActiveTab,
@@ -49,6 +50,10 @@ export async function onTabGroupUpdated(group: chrome.tabGroups.TabGroup): Promi
     const active = await getActiveSpace(group.windowId)
     if (active?.id !== space.id) await switchTo(space.id, group.windowId)
   }
+}
+
+export async function onTabRemoved(tabId: number): Promise<void> {
+  await dropPinForTab(tabId)
 }
 
 export async function onTabGroupRemoved(group: chrome.tabGroups.TabGroup): Promise<void> {

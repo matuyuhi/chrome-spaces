@@ -1,4 +1,4 @@
-import { listSpaces, switchTo, createStaticSpace } from './space-manager'
+import { listSpaces, switchTo, createStaticSpace, resetTabToBase } from './space-manager'
 import { type SpaceColor } from '../shared/types'
 
 const SPACE_COLORS: SpaceColor[] = [
@@ -25,6 +25,12 @@ export async function handleCommand(command: string, windowId: number): Promise<
       color: pickNextColor(existing.length),
       windowId,
     })
+    return
+  }
+
+  if (command === 'reset-current-tab') {
+    const [activeTab] = await chrome.tabs.query({ windowId, active: true })
+    if (typeof activeTab?.id === 'number') await resetTabToBase(activeTab.id)
     return
   }
 

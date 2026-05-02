@@ -58,6 +58,7 @@ export interface ChromeMock {
   tabs: Map<number, FakeTab>
   groups: Map<number, FakeGroup>
   alarms: Map<string, { name: string; periodInMinutes?: number }>
+  contextMenuItems: Map<string, { id: string; title: string }>
 }
 
 export function setupChromeMock(): ChromeMock {
@@ -120,6 +121,12 @@ export function setupChromeMock(): ChromeMock {
         for (const other of tabs.values()) if (other.windowId === t.windowId) other.active = false
         t.active = true
       }
+      if (typeof props.url === 'string') t.url = props.url
+      return t as unknown as chrome.tabs.Tab
+    }),
+    get: vi.fn(async (id: number) => {
+      const t = tabs.get(id)
+      if (!t) throw new Error(`No tab ${id}`)
       return t as unknown as chrome.tabs.Tab
     }),
     remove: vi.fn(async (ids: number | number[]) => {
@@ -163,6 +170,18 @@ export function setupChromeMock(): ChromeMock {
     getAll: vi.fn(async () => [...alarmsBacking.values()]),
   }
 
+  const contextMenuItems = new Map<string, { id: string; title: string }>()
+  const contextMenusApi = {
+    create: vi.fn((opts: { id?: string; title?: string }) => {
+      const id = opts.id ?? `auto-${contextMenuItems.size}`
+      contextMenuItems.set(id, { id, title: opts.title ?? '' })
+      return id
+    }),
+    removeAll: vi.fn(async () => {
+      contextMenuItems.clear()
+    }),
+  }
+
   ;(globalThis as unknown as { chrome: unknown }).chrome = {
     storage: {
       sync: makeArea(sync),
@@ -171,7 +190,8 @@ export function setupChromeMock(): ChromeMock {
     tabs: tabsApi,
     tabGroups: tabGroupsApi,
     alarms: alarmsApi,
+    contextMenus: contextMenusApi,
   }
 
-  return { sync, local, tabs, groups, alarms: alarmsBacking }
+  return { sync, local, tabs, groups, alarms: alarmsBacking, contextMenuItems }
 }
