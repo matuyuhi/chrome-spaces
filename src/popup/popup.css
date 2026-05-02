@@ -331,6 +331,40 @@ h1 {
   flex-shrink: 0;
 }
 
+.space-emoji {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.emoji-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 4px;
+}
+
+.emoji-input {
+  width: 40px;
+  text-align: center;
+  font-size: 14px;
+  padding: 4px 6px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.emoji-input:focus {
+  border-color: var(--accent);
+}
+
 .space-name {
   flex: 1;
   white-space: nowrap;

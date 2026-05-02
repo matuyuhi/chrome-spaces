@@ -29,6 +29,7 @@ export type Message =
   | { type: 'getGitHubToken' }
   | { type: 'setGitHubToken'; token?: string }
   | { type: 'reorderSpaces'; windowId: number; orderedIds: SpaceId[] }
+  | { type: 'setSpaceEmoji'; spaceId: SpaceId; emoji?: string }
 
 export interface MessageResponseMap {
   createStatic: Space
@@ -43,6 +44,7 @@ export interface MessageResponseMap {
   getGitHubToken: { hasToken: boolean }
   setGitHubToken: void
   reorderSpaces: void
+  setSpaceEmoji: void
 }
 
 export type MessageResponse =

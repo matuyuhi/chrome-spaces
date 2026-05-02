@@ -8,6 +8,7 @@ import {
   reorderSpaces,
   setGitHubToken,
   setSpaceColor,
+  setSpaceEmoji,
   switchTo,
 } from './rpc'
 import { isLive, type Space, type SpaceColor, type SpaceId } from '../shared/types'
@@ -233,6 +234,10 @@ export function App() {
                 setMenuOpenId(undefined)
                 await refresh()
               }}
+              onEmojiChange={async (emoji) => {
+                await setSpaceEmoji(s.id, emoji)
+                await refresh()
+              }}
               onSyncNow={async () => {
                 setMenuOpenId(undefined)
                 try {
@@ -282,6 +287,7 @@ interface SpaceRowProps {
   onCancelEdit: () => void
   onToggleMenu: () => void
   onColorChange: (color: SpaceColor) => void
+  onEmojiChange: (emoji: string | undefined) => void
   onSyncNow: () => void
   onDelete: (closeTabs: boolean) => void
 }
@@ -336,7 +342,13 @@ function SpaceRow(props: SpaceRowProps) {
         onClick={editing ? undefined : props.onSwitch}
         disabled={editing}
       >
-        <span className="dot" style={{ background: COLOR_HEX[space.color] }} aria-hidden />
+        {space.emoji ? (
+          <span className="space-emoji" aria-hidden>
+            {space.emoji}
+          </span>
+        ) : (
+          <span className="dot" style={{ background: COLOR_HEX[space.color] }} aria-hidden />
+        )}
         {editing ? (
           <input
             className="name-input"
@@ -378,6 +390,8 @@ function SpaceRow(props: SpaceRowProps) {
             </>
           )}
           <button onClick={props.onStartEdit}>Rename</button>
+          <div className="menu-section">Icon</div>
+          <EmojiPicker emoji={space.emoji} onChange={props.onEmojiChange} />
           <div className="menu-section">Color</div>
           <div className="color-grid">
             {COLORS.map((c) => (
@@ -400,6 +414,61 @@ function SpaceRow(props: SpaceRowProps) {
         </div>
       )}
     </li>
+  )
+}
+
+interface EmojiPickerProps {
+  emoji: string | undefined
+  onChange: (emoji: string | undefined) => void
+}
+
+// Trim to a single grapheme so a paste of "🔥🚀" stores as "🔥".
+function firstGrapheme(input: string): string {
+  if (!input) return ''
+  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  const first = segmenter.segment(input)[Symbol.iterator]().next().value
+  return first?.segment ?? ''
+}
+
+function EmojiPicker({ emoji, onChange }: EmojiPickerProps) {
+  const [draft, setDraft] = useState(emoji ?? '')
+
+  useEffect(() => setDraft(emoji ?? ''), [emoji])
+
+  const commit = (raw: string) => {
+    const next = firstGrapheme(raw.trim())
+    const normalized = next === '' ? undefined : next
+    if (normalized !== emoji) onChange(normalized)
+  }
+
+  return (
+    <div className="emoji-row">
+      <input
+        className="emoji-input"
+        value={draft}
+        placeholder="🚀"
+        onChange={(e) => setDraft(firstGrapheme(e.target.value))}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            commit((e.target as HTMLInputElement).value)
+            ;(e.target as HTMLInputElement).blur()
+          }
+        }}
+      />
+      {emoji && (
+        <button
+          type="button"
+          className="btn-link"
+          onClick={() => {
+            setDraft('')
+            onChange(undefined)
+          }}
+        >
+          Clear
+        </button>
+      )}
+    </div>
   )
 }
 

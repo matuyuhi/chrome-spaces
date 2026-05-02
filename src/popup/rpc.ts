@@ -26,3 +26,6 @@ export const setGitHubToken = (token: string | undefined) =>
 
 export const reorderSpaces = (windowId: number, orderedIds: SpaceId[]) =>
   sendMessage({ type: 'reorderSpaces', windowId, orderedIds })
+
+export const setSpaceEmoji = (spaceId: SpaceId, emoji: string | undefined) =>
+  sendMessage({ type: 'setSpaceEmoji', spaceId, emoji })
