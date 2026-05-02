@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   deleteSpace,
   getActiveSpace,
+  getGitHubTokenStatus,
   listSpaces,
   renameSpace,
+  setGitHubToken,
   setSpaceColor,
   switchTo,
-} from '../background/space-manager'
-import { getGitHubToken, setGitHubToken } from '../background/secret-storage'
-import { isLive, type Space, type SpaceColor, type SpaceId } from '../shared/types'
+} from './rpc'
+import { isLive, type Space, type SpaceColor } from '../shared/types'
 import { sendMessage } from '../shared/messaging'
 import { LiveSpaceForm, type LiveSpaceFormResult } from './live-space-config'
 
@@ -72,7 +73,7 @@ export function App() {
           onSubmit={async (input: LiveSpaceFormResult) => {
             if (windowId === undefined) return
             try {
-              const space = await sendMessage<{ id: SpaceId }>({
+              const space = await sendMessage({
                 type: 'createLive',
                 payload: {
                   name: input.name,
@@ -119,7 +120,7 @@ export function App() {
             if (windowId === undefined) return
             setError(undefined)
             try {
-              const created = await sendMessage<{ id: SpaceId }>({
+              const created = await sendMessage({
                 type: 'createStatic',
                 payload: {
                   name: `Space ${spaces.length + 1}`,
@@ -194,7 +195,7 @@ export function App() {
                 await refresh()
               }}
               onDelete={async (closeTabs) => {
-                await deleteSpace(s.id, { closeTabs })
+                await deleteSpace(s.id, closeTabs)
                 setMenuOpenId(undefined)
                 await refresh()
               }}
@@ -321,7 +322,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    void getGitHubToken().then((t) => setHasToken(!!t))
+    void getGitHubTokenStatus().then(({ hasToken }) => setHasToken(hasToken))
   }, [])
 
   const handleSave = async () => {

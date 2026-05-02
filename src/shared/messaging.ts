@@ -1,4 +1,4 @@
-import { type LiveSource, type SpaceColor, type SpaceId } from './types'
+import { type LiveSource, type Space, type SpaceColor, type SpaceId } from './types'
 
 export interface CreateStaticPayload {
   name: string
@@ -20,14 +20,38 @@ export type Message =
   | { type: 'createStatic'; payload: CreateStaticPayload }
   | { type: 'createLive'; payload: CreateLivePayload }
   | { type: 'syncLive'; spaceId: SpaceId }
+  | { type: 'listSpaces'; windowId?: number }
+  | { type: 'getActiveSpace'; windowId: number }
+  | { type: 'switchTo'; spaceId: SpaceId; windowId?: number }
+  | { type: 'deleteSpace'; spaceId: SpaceId; closeTabs: boolean }
+  | { type: 'renameSpace'; spaceId: SpaceId; name: string }
+  | { type: 'setSpaceColor'; spaceId: SpaceId; color: SpaceColor }
+  | { type: 'getGitHubToken' }
+  | { type: 'setGitHubToken'; token?: string }
+
+export interface MessageResponseMap {
+  createStatic: Space
+  createLive: Space
+  syncLive: void
+  listSpaces: Space[]
+  getActiveSpace: Space | undefined
+  switchTo: void
+  deleteSpace: void
+  renameSpace: void
+  setSpaceColor: void
+  getGitHubToken: { hasToken: boolean }
+  setGitHubToken: void
+}
 
 export type MessageResponse =
   | { ok: true; data: unknown }
   | { ok: false; error: string }
 
-export async function sendMessage<T = unknown>(msg: Message): Promise<T> {
+export async function sendMessage<M extends Message>(
+  msg: M,
+): Promise<MessageResponseMap[M['type']]> {
   const response = (await chrome.runtime.sendMessage(msg)) as MessageResponse | undefined
   if (!response) throw new Error('No response from background')
   if (!response.ok) throw new Error(response.error)
-  return response.data as T
+  return response.data as MessageResponseMap[M['type']]
 }

@@ -5,8 +5,18 @@ import {
   onTabGroupRemoved,
 } from './handlers'
 import { handleCommand, resolveWindowId } from './commands'
-import { createLiveSpace, createStaticSpace } from './space-manager'
+import {
+  createLiveSpace,
+  createStaticSpace,
+  deleteSpace,
+  getActiveSpace,
+  listSpaces,
+  renameSpace,
+  setSpaceColor,
+  switchTo,
+} from './space-manager'
 import { syncLiveSpace } from './live/sync-engine'
+import { getGitHubToken, setGitHubToken } from './secret-storage'
 import { type Message, type MessageResponse } from '../shared/messaging'
 
 import { reconcile } from './reconcile'
@@ -54,6 +64,22 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return createLiveSpace(msg.payload)
     case 'syncLive':
       return syncLiveSpace(msg.spaceId)
+    case 'listSpaces':
+      return listSpaces(msg.windowId)
+    case 'getActiveSpace':
+      return getActiveSpace(msg.windowId)
+    case 'switchTo':
+      return switchTo(msg.spaceId, msg.windowId)
+    case 'deleteSpace':
+      return deleteSpace(msg.spaceId, { closeTabs: msg.closeTabs })
+    case 'renameSpace':
+      return renameSpace(msg.spaceId, msg.name)
+    case 'setSpaceColor':
+      return setSpaceColor(msg.spaceId, msg.color)
+    case 'getGitHubToken':
+      return { hasToken: !!(await getGitHubToken()) }
+    case 'setGitHubToken':
+      return setGitHubToken(msg.token)
   }
 }
 
