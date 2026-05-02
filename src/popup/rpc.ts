@@ -1,5 +1,5 @@
 import { sendMessage } from '../shared/messaging'
-import { type SpaceColor, type SpaceId } from '../shared/types'
+import { type LiveSource, type SpaceColor, type SpaceId } from '../shared/types'
 
 export const listSpaces = (windowId?: number) =>
   sendMessage({ type: 'listSpaces', windowId })
@@ -29,3 +29,8 @@ export const reorderSpaces = (windowId: number, orderedIds: SpaceId[]) =>
 
 export const setSpaceEmoji = (spaceId: SpaceId, emoji: string | undefined) =>
   sendMessage({ type: 'setSpaceEmoji', spaceId, emoji })
+
+export const updateLiveSpace = (
+  spaceId: SpaceId,
+  patch: { source?: LiveSource; refreshIntervalMin?: number },
+) => sendMessage({ type: 'updateLiveSpace', spaceId, ...patch })

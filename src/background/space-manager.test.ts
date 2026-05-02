@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
+  createLiveSpace,
   createStaticSpace,
   switchTo,
   listSpaces,
@@ -9,7 +10,9 @@ import {
   findSpaceByGroupId,
   reorderSpaces,
   getActiveSpace,
+  updateLiveSpace,
 } from './space-manager'
+import { isLive } from '../shared/types'
 import { setupChromeMock, type ChromeMock } from './test-utils'
 
 describe('space-manager', () => {
@@ -93,5 +96,29 @@ describe('space-manager', () => {
     await reorderSpaces(1, [c.id, a.id, b.id])
     const list = await listSpaces(1)
     expect(list.map((s) => s.id)).toEqual([c.id, a.id, b.id])
+  })
+
+  it('updateLiveSpace replaces source and re-schedules on interval change', async () => {
+    const live = await createLiveSpace({
+      name: 'Reviews',
+      color: 'blue',
+      windowId: 1,
+      source: { type: 'github-prs', preset: 'review-requested' },
+      refreshIntervalMin: 5,
+    })
+    await updateLiveSpace(live.id, {
+      source: { type: 'github-prs', preset: 'custom', query: 'is:pr is:open org:foo' },
+      refreshIntervalMin: 15,
+    })
+    const updated = (await listSpaces(1))[0]
+    if (!updated || !isLive(updated)) throw new Error('expected live space')
+    expect(updated.refreshIntervalMin).toBe(15)
+    expect(updated.source).toEqual({
+      type: 'github-prs',
+      preset: 'custom',
+      query: 'is:pr is:open org:foo',
+    })
+    const alarm = mock.alarms.get(`live-space:${live.id}`)
+    expect(alarm?.periodInMinutes).toBe(15)
   })
 })

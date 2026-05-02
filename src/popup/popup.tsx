@@ -10,6 +10,7 @@ import {
   setSpaceColor,
   setSpaceEmoji,
   switchTo,
+  updateLiveSpace,
 } from './rpc'
 import { isLive, type Space, type SpaceColor, type SpaceId } from '../shared/types'
 import { sendMessage } from '../shared/messaging'
@@ -39,10 +40,11 @@ const COLOR_HEX: Record<SpaceColor, string> = {
   orange: '#fa7b17',
 }
 
-type View = 'list' | 'new-live' | 'settings'
+type View = 'list' | 'new-live' | 'edit-live' | 'settings'
 
 export function App() {
   const [view, setView] = useState<View>('list')
+  const [editLiveId, setEditLiveId] = useState<SpaceId | undefined>()
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeId, setActiveId] = useState<string | undefined>()
   const [windowId, setWindowId] = useState<number | undefined>()
@@ -94,6 +96,51 @@ export function App() {
 
   if (view === 'settings') {
     return <SettingsPanel onClose={() => setView('list')} />
+  }
+
+  if (view === 'edit-live' && editLiveId) {
+    const target = spaces.find((s) => s.id === editLiveId)
+    if (!target || !isLive(target)) {
+      setView('list')
+      setEditLiveId(undefined)
+      return null
+    }
+    return (
+      <div className="popup-root">
+        <LiveSpaceForm
+          mode="edit"
+          defaultColor={target.color}
+          initial={{
+            name: target.name,
+            color: target.color,
+            source: target.source,
+            refreshIntervalMin: target.refreshIntervalMin,
+          }}
+          onCancel={() => {
+            setView('list')
+            setEditLiveId(undefined)
+          }}
+          onSubmit={async (input) => {
+            try {
+              await updateLiveSpace(editLiveId, {
+                source: input.source,
+                refreshIntervalMin: input.refreshIntervalMin,
+              })
+              setView('list')
+              setEditLiveId(undefined)
+              await refresh()
+              void sendMessage({ type: 'syncLive', spaceId: editLiveId }).then(() => refresh())
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e)
+              console.error('[Spaces] updateLiveSpace failed', e)
+              setError(`Update failed: ${message}`)
+              setView('list')
+              setEditLiveId(undefined)
+            }
+          }}
+        />
+      </div>
+    )
   }
 
   if (view === 'new-live') {
@@ -247,6 +294,11 @@ export function App() {
                 }
                 await refresh()
               }}
+              onEditLive={() => {
+                setMenuOpenId(undefined)
+                setEditLiveId(s.id)
+                setView('edit-live')
+              }}
               onDelete={async (closeTabs) => {
                 await deleteSpace(s.id, closeTabs)
                 setMenuOpenId(undefined)
@@ -289,6 +341,7 @@ interface SpaceRowProps {
   onColorChange: (color: SpaceColor) => void
   onEmojiChange: (emoji: string | undefined) => void
   onSyncNow: () => void
+  onEditLive: () => void
   onDelete: (closeTabs: boolean) => void
 }
 
@@ -385,6 +438,7 @@ function SpaceRow(props: SpaceRowProps) {
           {live && (
             <>
               <button onClick={props.onSyncNow}>Sync now</button>
+              <button onClick={props.onEditLive}>Edit live folder…</button>
               {live.lastSyncError && <div className="menu-error">{live.lastSyncError}</div>}
               <div className="menu-divider" />
             </>

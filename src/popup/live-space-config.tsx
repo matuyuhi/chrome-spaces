@@ -42,19 +42,35 @@ export interface LiveSpaceFormResult {
 }
 
 interface Props {
+  mode?: 'create' | 'edit'
+  initial?: LiveSpaceFormResult
   defaultColor: SpaceColor
   onSubmit: (input: LiveSpaceFormResult) => void | Promise<void>
   onCancel: () => void
 }
 
-export function LiveSpaceForm({ defaultColor, onSubmit, onCancel }: Props) {
-  const [name, setName] = useState('Reviews')
-  const [color, setColor] = useState<SpaceColor>(defaultColor)
-  const [preset, setPreset] = useState<Preset>('review-requested')
-  const [user, setUser] = useState('')
-  const [customQuery, setCustomQuery] = useState('is:pr is:open ')
-  const [interval, setIntervalMin] = useState(5)
+function unpackSource(source: LiveSource | undefined) {
+  if (!source) return { preset: 'review-requested' as Preset, user: '', customQuery: 'is:pr is:open ' }
+  if (source.preset === 'custom') {
+    return { preset: 'custom' as Preset, user: '', customQuery: source.query }
+  }
+  return {
+    preset: source.preset as Preset,
+    user: source.user ?? '',
+    customQuery: 'is:pr is:open ',
+  }
+}
+
+export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit, onCancel }: Props) {
+  const seed = unpackSource(initial?.source)
+  const [name, setName] = useState(initial?.name ?? 'Reviews')
+  const [color, setColor] = useState<SpaceColor>(initial?.color ?? defaultColor)
+  const [preset, setPreset] = useState<Preset>(seed.preset)
+  const [user, setUser] = useState(seed.user)
+  const [customQuery, setCustomQuery] = useState(seed.customQuery)
+  const [interval, setIntervalMin] = useState(initial?.refreshIntervalMin ?? 5)
   const [submitting, setSubmitting] = useState(false)
+  const isEdit = mode === 'edit'
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -86,35 +102,39 @@ export function LiveSpaceForm({ defaultColor, onSubmit, onCancel }: Props) {
         <button type="button" className="btn-link" onClick={onCancel}>
           ← Back
         </button>
-        <h2>New GitHub Live Folder</h2>
+        <h2>{isEdit ? 'Edit Live Folder' : 'New GitHub Live Folder'}</h2>
       </header>
 
-      <label className="field">
-        <span>Name</span>
-        <input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          maxLength={40}
-        />
-      </label>
+      {!isEdit && (
+        <label className="field">
+          <span>Name</span>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            maxLength={40}
+          />
+        </label>
+      )}
 
-      <label className="field">
-        <span>Color</span>
-        <div className="color-grid">
-          {COLORS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={`color-swatch ${c === color ? 'is-current' : ''}`}
-              style={{ background: COLOR_HEX[c] }}
-              onClick={() => setColor(c)}
-              aria-label={`Color ${c}`}
-            />
-          ))}
-        </div>
-      </label>
+      {!isEdit && (
+        <label className="field">
+          <span>Color</span>
+          <div className="color-grid">
+            {COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`color-swatch ${c === color ? 'is-current' : ''}`}
+                style={{ background: COLOR_HEX[c] }}
+                onClick={() => setColor(c)}
+                aria-label={`Color ${c}`}
+              />
+            ))}
+          </div>
+        </label>
+      )}
 
       <label className="field">
         <span>Source</span>
@@ -165,7 +185,7 @@ export function LiveSpaceForm({ defaultColor, onSubmit, onCancel }: Props) {
           Cancel
         </button>
         <button type="submit" className="btn-primary" disabled={submitting}>
-          {submitting ? 'Creating…' : 'Create Live Folder'}
+          {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Create Live Folder'}
         </button>
       </div>
     </form>

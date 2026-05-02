@@ -16,6 +16,7 @@ import {
   setSpaceColor,
   setSpaceEmoji,
   switchTo,
+  updateLiveSpace,
 } from './space-manager'
 import { syncLiveSpace } from './live/sync-engine'
 import { getGitHubToken, setGitHubToken } from './secret-storage'
@@ -86,6 +87,11 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return reorderSpaces(msg.windowId, msg.orderedIds)
     case 'setSpaceEmoji':
       return setSpaceEmoji(msg.spaceId, msg.emoji)
+    case 'updateLiveSpace':
+      return updateLiveSpace(msg.spaceId, {
+        source: msg.source,
+        refreshIntervalMin: msg.refreshIntervalMin,
+      })
   }
 }
 

@@ -30,6 +30,12 @@ export type Message =
   | { type: 'setGitHubToken'; token?: string }
   | { type: 'reorderSpaces'; windowId: number; orderedIds: SpaceId[] }
   | { type: 'setSpaceEmoji'; spaceId: SpaceId; emoji?: string }
+  | {
+      type: 'updateLiveSpace'
+      spaceId: SpaceId
+      source?: LiveSource
+      refreshIntervalMin?: number
+    }
 
 export interface MessageResponseMap {
   createStatic: Space
@@ -45,6 +51,7 @@ export interface MessageResponseMap {
   setGitHubToken: void
   reorderSpaces: void
   setSpaceEmoji: void
+  updateLiveSpace: Space | undefined
 }
 
 export type MessageResponse =

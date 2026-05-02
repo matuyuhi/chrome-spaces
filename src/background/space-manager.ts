@@ -167,6 +167,33 @@ export async function setSpaceColor(id: SpaceId, color: SpaceColor): Promise<voi
   }
 }
 
+export interface UpdateLiveSpaceInput {
+  source?: LiveSource
+  refreshIntervalMin?: number
+}
+
+export async function updateLiveSpace(
+  id: SpaceId,
+  patch: UpdateLiveSpaceInput,
+): Promise<LiveSpace | undefined> {
+  let updated: LiveSpace | undefined
+  let intervalChanged = false
+  await updateStore((s) => {
+    const sp = s.spaces[id]
+    if (!sp || !isLive(sp)) return
+    if (patch.source !== undefined) sp.source = patch.source
+    if (patch.refreshIntervalMin !== undefined && patch.refreshIntervalMin !== sp.refreshIntervalMin) {
+      sp.refreshIntervalMin = patch.refreshIntervalMin
+      intervalChanged = true
+    }
+    updated = sp
+  })
+  if (updated && intervalChanged) {
+    await scheduleSync(id, updated.refreshIntervalMin)
+  }
+  return updated
+}
+
 export async function setSpaceEmoji(id: SpaceId, emoji: string | undefined): Promise<void> {
   await updateStore((s) => {
     const sp = s.spaces[id]
