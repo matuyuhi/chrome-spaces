@@ -273,6 +273,38 @@ h1 {
   background: var(--bg-active);
 }
 
+.space-row.is-dragging {
+  opacity: 0.4;
+}
+
+.space-row.drop-above::before,
+.space-row.drop-below::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.space-row.drop-above::before {
+  top: -2px;
+}
+
+.space-row.drop-below::after {
+  bottom: -2px;
+}
+
+.space-row[draggable='true'] .space-main {
+  cursor: grab;
+}
+
+.space-row.is-dragging .space-main {
+  cursor: grabbing;
+}
+
 .space-main {
   flex: 1;
   display: flex;

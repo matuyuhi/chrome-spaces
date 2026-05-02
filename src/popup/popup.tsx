@@ -5,11 +5,12 @@ import {
   getGitHubTokenStatus,
   listSpaces,
   renameSpace,
+  reorderSpaces,
   setGitHubToken,
   setSpaceColor,
   switchTo,
 } from './rpc'
-import { isLive, type Space, type SpaceColor } from '../shared/types'
+import { isLive, type Space, type SpaceColor, type SpaceId } from '../shared/types'
 import { sendMessage } from '../shared/messaging'
 import { LiveSpaceForm, type LiveSpaceFormResult } from './live-space-config'
 
@@ -47,6 +48,10 @@ export function App() {
   const [editingId, setEditingId] = useState<string | undefined>()
   const [menuOpenId, setMenuOpenId] = useState<string | undefined>()
   const [error, setError] = useState<string | undefined>()
+  const [dragId, setDragId] = useState<SpaceId | undefined>()
+  const [dropTarget, setDropTarget] = useState<
+    { id: SpaceId; position: 'above' | 'below' } | undefined
+  >()
 
   const refresh = useCallback(async () => {
     const win = await chrome.windows.getCurrent()
@@ -55,6 +60,32 @@ export function App() {
     setSpaces(await listSpaces(win.id))
     setActiveId((await getActiveSpace(win.id))?.id)
   }, [])
+
+  const handleDrop = useCallback(async () => {
+    if (!dragId || !dropTarget || windowId === undefined) {
+      setDragId(undefined)
+      setDropTarget(undefined)
+      return
+    }
+    const sourceIdx = spaces.findIndex((s) => s.id === dragId)
+    const targetIdx = spaces.findIndex((s) => s.id === dropTarget.id)
+    setDragId(undefined)
+    setDropTarget(undefined)
+    if (sourceIdx === -1 || targetIdx === -1 || sourceIdx === targetIdx) return
+    let insertIdx = targetIdx + (dropTarget.position === 'below' ? 1 : 0)
+    if (sourceIdx < insertIdx) insertIdx -= 1
+    if (insertIdx === sourceIdx) return
+    const next = [...spaces]
+    const [moved] = next.splice(sourceIdx, 1)
+    if (!moved) return
+    next.splice(insertIdx, 0, moved)
+    setSpaces(next)
+    await reorderSpaces(
+      windowId,
+      next.map((s) => s.id),
+    )
+    await refresh()
+  }, [dragId, dropTarget, spaces, windowId, refresh])
 
   useEffect(() => {
     void refresh()
@@ -162,6 +193,23 @@ export function App() {
               active={s.id === activeId}
               editing={editingId === s.id}
               menuOpen={menuOpenId === s.id}
+              isDragging={dragId === s.id}
+              dropPosition={dropTarget?.id === s.id ? dropTarget.position : undefined}
+              onDragStart={() => setDragId(s.id)}
+              onDragOver={(position) => {
+                if (!dragId || dragId === s.id) return
+                if (dropTarget?.id !== s.id || dropTarget.position !== position) {
+                  setDropTarget({ id: s.id, position })
+                }
+              }}
+              onDragLeave={() => {
+                if (dropTarget?.id === s.id) setDropTarget(undefined)
+              }}
+              onDrop={() => void handleDrop()}
+              onDragEnd={() => {
+                setDragId(undefined)
+                setDropTarget(undefined)
+              }}
               onSwitch={async () => {
                 if (windowId === undefined || editingId) return
                 await switchTo(s.id, windowId)
@@ -221,6 +269,13 @@ interface SpaceRowProps {
   active: boolean
   editing: boolean
   menuOpen: boolean
+  isDragging: boolean
+  dropPosition: 'above' | 'below' | undefined
+  onDragStart: () => void
+  onDragOver: (position: 'above' | 'below') => void
+  onDragLeave: () => void
+  onDrop: () => void
+  onDragEnd: () => void
   onSwitch: () => void
   onStartEdit: () => void
   onCommitEdit: (name: string) => void
@@ -232,7 +287,7 @@ interface SpaceRowProps {
 }
 
 function SpaceRow(props: SpaceRowProps) {
-  const { space, active, editing, menuOpen } = props
+  const { space, active, editing, menuOpen, isDragging, dropPosition } = props
   const [draft, setDraft] = useState(space.name)
 
   useEffect(() => {
@@ -242,8 +297,40 @@ function SpaceRow(props: SpaceRowProps) {
   const live = isLive(space) ? space : undefined
   const errorTooltip = live?.lastSyncError ?? ''
 
+  const className = [
+    'space-row',
+    active && 'is-active',
+    isDragging && 'is-dragging',
+    dropPosition === 'above' && 'drop-above',
+    dropPosition === 'below' && 'drop-below',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
-    <li className={`space-row ${active ? 'is-active' : ''}`}>
+    <li
+      className={className}
+      draggable={!editing}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move'
+        // Firefox requires data; the value is unused.
+        e.dataTransfer.setData('text/plain', space.id)
+        props.onDragStart()
+      }}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        const rect = e.currentTarget.getBoundingClientRect()
+        const position = e.clientY - rect.top < rect.height / 2 ? 'above' : 'below'
+        props.onDragOver(position)
+      }}
+      onDragLeave={props.onDragLeave}
+      onDrop={(e) => {
+        e.preventDefault()
+        props.onDrop()
+      }}
+      onDragEnd={props.onDragEnd}
+    >
       <button
         className="space-main"
         onClick={editing ? undefined : props.onSwitch}

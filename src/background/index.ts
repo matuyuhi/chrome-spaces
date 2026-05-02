@@ -12,6 +12,7 @@ import {
   getActiveSpace,
   listSpaces,
   renameSpace,
+  reorderSpaces,
   setSpaceColor,
   switchTo,
 } from './space-manager'
@@ -80,6 +81,8 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return { hasToken: !!(await getGitHubToken()) }
     case 'setGitHubToken':
       return setGitHubToken(msg.token)
+    case 'reorderSpaces':
+      return reorderSpaces(msg.windowId, msg.orderedIds)
   }
 }
 

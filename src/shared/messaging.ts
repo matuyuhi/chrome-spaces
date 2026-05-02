@@ -28,6 +28,7 @@ export type Message =
   | { type: 'setSpaceColor'; spaceId: SpaceId; color: SpaceColor }
   | { type: 'getGitHubToken' }
   | { type: 'setGitHubToken'; token?: string }
+  | { type: 'reorderSpaces'; windowId: number; orderedIds: SpaceId[] }
 
 export interface MessageResponseMap {
   createStatic: Space
@@ -41,6 +42,7 @@ export interface MessageResponseMap {
   setSpaceColor: void
   getGitHubToken: { hasToken: boolean }
   setGitHubToken: void
+  reorderSpaces: void
 }
 
 export type MessageResponse =

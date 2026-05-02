@@ -23,3 +23,6 @@ export const getGitHubTokenStatus = () => sendMessage({ type: 'getGitHubToken' }
 
 export const setGitHubToken = (token: string | undefined) =>
   sendMessage({ type: 'setGitHubToken', token })
+
+export const reorderSpaces = (windowId: number, orderedIds: SpaceId[]) =>
+  sendMessage({ type: 'reorderSpaces', windowId, orderedIds })
