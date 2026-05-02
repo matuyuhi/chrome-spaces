@@ -1,6 +1,6 @@
 import { type LiveSource } from '../../../shared/types'
 
-export interface PullRequestRef {
+export interface ItemRef {
   externalId: string
   url: string
   title: string
@@ -36,28 +36,39 @@ interface SearchResponse {
   incomplete_results: boolean
 }
 
-const PR_URL_RE = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/
+const ITEM_URL_RE = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)$/
 
 export function buildQuery(source: LiveSource): string {
-  if (source.type !== 'github-prs') {
-    throw new Error(`Unsupported source type: ${(source as { type: string }).type}`)
+  if (source.type === 'github-prs') {
+    if (source.preset === 'custom') return source.query
+    const userSpec = source.user?.trim() || '@me'
+    switch (source.preset) {
+      case 'review-requested':
+        return `is:pr is:open review-requested:${userSpec}`
+      case 'assigned':
+        return `is:pr is:open assignee:${userSpec}`
+      case 'authored':
+        return `is:pr is:open author:${userSpec}`
+    }
   }
-  const userSpec = source.preset === 'custom' ? null : (source.user?.trim() || '@me')
-  switch (source.preset) {
-    case 'review-requested':
-      return `is:pr is:open review-requested:${userSpec}`
-    case 'assigned':
-      return `is:pr is:open assignee:${userSpec}`
-    case 'authored':
-      return `is:pr is:open author:${userSpec}`
-    case 'custom':
-      return source.query
+  if (source.type === 'github-issues') {
+    if (source.preset === 'custom') return source.query
+    const userSpec = source.user?.trim() || '@me'
+    switch (source.preset) {
+      case 'assigned':
+        return `is:issue is:open assignee:${userSpec}`
+      case 'authored':
+        return `is:issue is:open author:${userSpec}`
+      case 'mentioned':
+        return `is:issue is:open mentions:${userSpec}`
+    }
   }
+  throw new Error(`Unsupported source type: ${(source as { type: string }).type}`)
 }
 
-export function parseItem(item: SearchIssueItem): PullRequestRef {
-  const match = PR_URL_RE.exec(item.html_url)
-  if (!match) throw new Error(`Unrecognized PR URL: ${item.html_url}`)
+export function parseItem(item: SearchIssueItem): ItemRef {
+  const match = ITEM_URL_RE.exec(item.html_url)
+  if (!match) throw new Error(`Unrecognized GitHub URL: ${item.html_url}`)
   const repo = match[1]!
   return {
     externalId: `${repo}#${item.number}`,
@@ -71,11 +82,11 @@ export function parseItem(item: SearchIssueItem): PullRequestRef {
   }
 }
 
-export async function fetchPullRequests(
+export async function fetchSearchResults(
   source: LiveSource,
   token: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<PullRequestRef[]> {
+): Promise<ItemRef[]> {
   const query = buildQuery(source)
   const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=50`
 

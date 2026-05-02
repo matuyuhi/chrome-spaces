@@ -7,7 +7,7 @@ import {
 } from '../../shared/types'
 import { loadStore, updateStore } from '../storage'
 import { getGitHubToken } from '../secret-storage'
-import { fetchPullRequests, GitHubError, type PullRequestRef } from './sources/github'
+import { fetchSearchResults, GitHubError, type ItemRef } from './sources/github'
 import { diff } from './diff'
 
 const now = (): number => Date.now()
@@ -41,16 +41,16 @@ export async function syncLiveSpace(
   }
 }
 
-async function fetchItems(space: LiveSpace, fetchImpl: typeof fetch): Promise<PullRequestRef[]> {
-  if (space.source.type === 'github-prs') {
+async function fetchItems(space: LiveSpace, fetchImpl: typeof fetch): Promise<ItemRef[]> {
+  if (space.source.type === 'github-prs' || space.source.type === 'github-issues') {
     const token = await getGitHubToken()
     if (!token) throw new Error('GitHub token not configured. Open Spaces popup → Settings → paste a PAT.')
-    return fetchPullRequests(space.source, token, fetchImpl)
+    return fetchSearchResults(space.source, token, fetchImpl)
   }
   throw new Error(`Unsupported live source: ${(space.source as { type: string }).type}`)
 }
 
-async function applyDiff(space: LiveSpace, items: PullRequestRef[]): Promise<void> {
+async function applyDiff(space: LiveSpace, items: ItemRef[]): Promise<void> {
   if (space.groupId === TAB_GROUP_ID_NONE) return // group is gone; reconcile will handle
 
   const result = diff(space.managedTabs, items)

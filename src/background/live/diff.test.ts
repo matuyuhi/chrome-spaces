@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { diff } from './diff'
 import { type ManagedTab } from '../../shared/types'
-import { type PullRequestRef } from './sources/github'
+import { type ItemRef } from './sources/github'
 
 const makeManaged = (externalId: string, tabId: number): ManagedTab => ({
   externalId,
@@ -10,7 +10,7 @@ const makeManaged = (externalId: string, tabId: number): ManagedTab => ({
   addedAt: 0,
 })
 
-const makeRef = (externalId: string): PullRequestRef => {
+const makeRef = (externalId: string): ItemRef => {
   const [repo, num] = externalId.split('#')
   return {
     externalId,

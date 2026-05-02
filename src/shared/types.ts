@@ -24,6 +24,8 @@ export type GitHubPreset = 'review-requested' | 'assigned' | 'authored' | 'custo
 export type LiveSource =
   | { type: 'github-prs'; preset: 'review-requested' | 'assigned' | 'authored'; user?: string }
   | { type: 'github-prs'; preset: 'custom'; query: string }
+  | { type: 'github-issues'; preset: 'assigned' | 'authored' | 'mentioned'; user?: string }
+  | { type: 'github-issues'; preset: 'custom'; query: string }
 
 export interface ManagedTab {
   externalId: string

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildQuery, parseItem, fetchPullRequests, GitHubError } from './github'
+import { buildQuery, parseItem, fetchSearchResults, GitHubError } from './github'
 
 describe('buildQuery', () => {
   it('builds review-requested query with @me default', () => {
@@ -66,10 +66,22 @@ describe('parseItem', () => {
     expect(ref.isDraft).toBe(false)
   })
 
-  it('throws on a non-PR URL', () => {
+  it('parses an issue URL', () => {
+    const ref = parseItem({
+      html_url: 'https://github.com/a/b/issues/7',
+      title: 't',
+      number: 7,
+      state: 'open',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    expect(ref.externalId).toBe('a/b#7')
+    expect(ref.repo).toBe('a/b')
+  })
+
+  it('throws on a URL that is neither pull nor issue', () => {
     expect(() =>
       parseItem({
-        html_url: 'https://github.com/a/b/issues/1',
+        html_url: 'https://github.com/a/b/discussions/1',
         title: 't',
         number: 1,
         state: 'open',
@@ -79,7 +91,27 @@ describe('parseItem', () => {
   })
 })
 
-describe('fetchPullRequests', () => {
+describe('buildQuery (issues)', () => {
+  it('builds an assigned issues query with @me default', () => {
+    expect(buildQuery({ type: 'github-issues', preset: 'assigned' })).toBe(
+      'is:issue is:open assignee:@me',
+    )
+  })
+
+  it('builds a mentioned issues query for an explicit user', () => {
+    expect(
+      buildQuery({ type: 'github-issues', preset: 'mentioned', user: 'octocat' }),
+    ).toBe('is:issue is:open mentions:octocat')
+  })
+
+  it('passes a custom issues query verbatim', () => {
+    expect(
+      buildQuery({ type: 'github-issues', preset: 'custom', query: 'label:bug' }),
+    ).toBe('label:bug')
+  })
+})
+
+describe('fetchSearchResults', () => {
   it('calls the search/issues endpoint with the right headers and query', async () => {
     const fetchSpy = vi.fn(async () =>
       new Response(
@@ -100,7 +132,7 @@ describe('fetchPullRequests', () => {
         { status: 200 },
       ),
     )
-    const result = await fetchPullRequests(
+    const result = await fetchSearchResults(
       { type: 'github-prs', preset: 'review-requested' },
       'ghp_test',
       fetchSpy,
@@ -118,7 +150,7 @@ describe('fetchPullRequests', () => {
   it('throws GitHubError on non-OK responses', async () => {
     const fetchSpy = vi.fn(async () => new Response('bad token', { status: 401 }))
     await expect(
-      fetchPullRequests({ type: 'github-prs', preset: 'assigned' }, 'bad', fetchSpy),
+      fetchSearchResults({ type: 'github-prs', preset: 'assigned' }, 'bad', fetchSpy),
     ).rejects.toBeInstanceOf(GitHubError)
   })
 })
