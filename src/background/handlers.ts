@@ -1,4 +1,5 @@
 import { dropTab, registerTab, setLastActiveTab } from './space-manager'
+import { updateStore } from './storage'
 
 export async function onTabCreated(tab: chrome.tabs.Tab): Promise<void> {
   await registerTab(tab)
@@ -25,4 +26,16 @@ export async function onTabAttached(
   } catch {
     /* tab gone */
   }
+}
+
+// When a Chrome window closes, the Space records that lived in it become
+// orphaned — their windowId no longer points at any real window. Don't
+// delete: that would lose the user's setup on every Chrome restart
+// (every window fires onRemoved during shutdown). Just clear the
+// per-window active pointer; bootstrap's reattachOrphanSpaces() rehomes
+// the Spaces to a live window the next time the SW spins up.
+export async function onWindowRemoved(windowId: number): Promise<void> {
+  await updateStore((s) => {
+    delete s.activeSpaceByWindow[windowId]
+  })
 }

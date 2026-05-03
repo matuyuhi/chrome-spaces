@@ -8,6 +8,7 @@ import {
   type SpaceId,
   type SpaceStore,
   type TabRecord,
+  CURRENT_SCHEMA_VERSION,
   collectSpaceTabIds,
   findContainingFolder,
   isLiveFolder,
@@ -561,6 +562,46 @@ export async function getActiveSpace(windowId: number): Promise<Space | undefine
   return id ? store.spaces[id] : undefined
 }
 
+// Append a batch of existing tabs to a folder. Used by the side panel's
+// "orphan tabs" action — tabs that exist in the window but aren't claimed
+// by any Space yet (created while the SW was suspended, or left behind by
+// a `deleteSpace({ closeTabs: false })`). Live folders refuse adoption.
+export async function addTabsToFolder(
+  folderId: FolderId,
+  tabIds: number[],
+): Promise<void> {
+  if (tabIds.length === 0) return
+  const allTabs = await chrome.tabs.query({})
+  const tabWindowById = new Map<number, number>()
+  for (const t of allTabs) {
+    if (typeof t.id === 'number' && typeof t.windowId === 'number') {
+      tabWindowById.set(t.id, t.windowId)
+    }
+  }
+  await updateStore((s) => {
+    const folder = s.folders[folderId]
+    if (!folder) return
+    if (folder.live) return
+    // Detach from any other folder so each tab belongs in one place.
+    for (const f of Object.values(s.folders)) {
+      if (f.id === folderId) continue
+      f.items = f.items.filter(
+        (it) => !(it.kind === 'tab' && tabIds.includes(it.tabId)),
+      )
+    }
+    for (const tabId of tabIds) {
+      if (!s.tabs[tabId]) {
+        const wId = tabWindowById.get(tabId)
+        if (wId === undefined) continue
+        s.tabs[tabId] = { tabId, windowId: wId }
+      }
+      if (!folder.items.some((it) => it.kind === 'tab' && it.tabId === tabId)) {
+        folder.items.push({ kind: 'tab', tabId })
+      }
+    }
+  })
+}
+
 // Walk every Chrome Tab Group in the window and create a Space from each.
 // Tabs claimed by an existing Space are skipped (they're already accounted
 // for); leftover tabs in a group become the new Space's root folder. The
@@ -601,6 +642,85 @@ export async function importChromeTabGroups(windowId: number): Promise<Space[]> 
     }
   }
   return created
+}
+
+// Replace the entire store with a previously-exported one. Tab refs and
+// the TabRecord map are dropped because tab ids are session-scoped — the
+// imported store almost certainly came from a different Chrome session.
+// Folder structure / Live config / pinned baseUrls (those live on
+// TabRecord, dropped) — only the durable parts survive.
+//
+// `currentWindowId` rehomes every Space and Live alarm to the window the
+// user is in right now, since the source windowIds are stale too.
+export async function importStore(
+  raw: SpaceStore,
+  currentWindowId: number,
+): Promise<void> {
+  if (raw.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    throw new Error(
+      `Schema version mismatch: file is v${raw.schemaVersion}, this build is v${CURRENT_SCHEMA_VERSION}`,
+    )
+  }
+  // Strip tab refs from every folder; reset Live folder managedTabs.
+  const folders: SpaceStore['folders'] = {}
+  for (const f of Object.values(raw.folders)) {
+    folders[f.id] = {
+      ...f,
+      items: f.items.filter((it) => it.kind === 'folder'),
+      live: f.live
+        ? {
+            source: f.live.source,
+            refreshIntervalMin: f.live.refreshIntervalMin,
+            managedTabs: [],
+            starterTabId: undefined,
+            lastSyncAt: undefined,
+            lastSyncError: undefined,
+          }
+        : undefined,
+    }
+  }
+  const spaces: SpaceStore['spaces'] = {}
+  for (const sp of Object.values(raw.spaces)) {
+    spaces[sp.id] = {
+      ...sp,
+      windowId: currentWindowId,
+      lastActiveTabId: undefined,
+    }
+  }
+  const next: SpaceStore = {
+    spaces,
+    folders,
+    tabs: {},
+    activeSpaceByWindow: {},
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+  }
+  await updateStore(() => next)
+}
+
+// Reassign Spaces whose windowId no longer matches any open Chrome window
+// to a live window. Called from bootstrap after Chrome restart: Chrome
+// hands out new windowIds even with session restore enabled, so every
+// previously-stored Space looks orphaned.
+export async function reattachOrphanSpaces(): Promise<void> {
+  const wins = await chrome.windows.getAll()
+  const liveWindowIds = new Set(
+    wins.map((w) => w.id).filter((id): id is number => typeof id === 'number'),
+  )
+  if (liveWindowIds.size === 0) return
+  const fallback = [...liveWindowIds][0]!
+  await updateStore((s) => {
+    for (const sp of Object.values(s.spaces)) {
+      if (!liveWindowIds.has(sp.windowId)) sp.windowId = fallback
+    }
+    for (const k of Object.keys(s.activeSpaceByWindow)) {
+      if (!liveWindowIds.has(Number(k))) delete s.activeSpaceByWindow[Number(k)]
+    }
+    // Tab records can also outlive a Chrome session; rebase to fallback so
+    // they don't shadow real tabs in other windows.
+    for (const t of Object.values(s.tabs)) {
+      if (!liveWindowIds.has(t.windowId)) t.windowId = fallback
+    }
+  })
 }
 
 // Used by reconcile to drop stale tab refs.

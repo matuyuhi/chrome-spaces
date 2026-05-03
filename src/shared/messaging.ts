@@ -31,6 +31,7 @@ export type Message =
   | { type: 'getStore' }
   | { type: 'createSpace'; payload: CreateSpacePayload }
   | { type: 'importChromeTabGroups'; windowId: number }
+  | { type: 'addTabsToFolder'; folderId: FolderId; tabIds: number[] }
   | { type: 'renameSpace'; spaceId: SpaceId; name: string }
   | { type: 'setSpaceColor'; spaceId: SpaceId; color: SpaceColor }
   | { type: 'setSpaceEmoji'; spaceId: SpaceId; emoji?: string }
@@ -57,11 +58,15 @@ export type Message =
   | { type: 'activateTab'; tabId: number }
   | { type: 'getGitHubToken' }
   | { type: 'setGitHubToken'; token?: string }
+  | { type: 'getUIPrefs' }
+  | { type: 'setUIPrefs'; prefs: Partial<UIPreferences> }
+  | { type: 'importStore'; store: SpaceStore; currentWindowId: number }
 
 export interface MessageResponseMap {
   getStore: SpaceStore
   createSpace: Space
   importChromeTabGroups: Space[]
+  addTabsToFolder: void
   renameSpace: void
   setSpaceColor: void
   setSpaceEmoji: void
@@ -83,6 +88,20 @@ export interface MessageResponseMap {
   activateTab: void
   getGitHubToken: { hasToken: boolean }
   setGitHubToken: void
+  getUIPrefs: UIPreferences
+  setUIPrefs: void
+  importStore: void
+}
+
+export type UIFontSize = 1 | 2 | 3 | 4 | 5
+
+export interface UIPreferences {
+  // 1 = XS, 3 = M (default), 5 = XL.
+  fontSize: UIFontSize
+}
+
+export const DEFAULT_UI_PREFS: UIPreferences = {
+  fontSize: 3,
 }
 
 export type MessageResponse =

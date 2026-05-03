@@ -3,16 +3,20 @@ import {
   onTabAttached,
   onTabCreated,
   onTabRemoved,
+  onWindowRemoved,
 } from './handlers'
 import { handleCommand, resolveWindowId } from './commands'
 import {
+  addTabsToFolder,
   createFolder,
   createSpace,
   deleteFolder,
   deleteSpace,
   importChromeTabGroups,
+  importStore,
   moveItem,
   pinTab,
+  reattachOrphanSpaces,
   renameFolder,
   renameSpace,
   reorderSpaces,
@@ -31,10 +35,12 @@ import { handleContextMenuClick, installContextMenus } from './context-menus'
 import { reconcile } from './reconcile'
 import { loadStore, migrateIfNeeded } from './storage'
 import { getGitHubToken, setGitHubToken } from './secret-storage'
+import { getUIPrefs, setUIPrefs } from './ui-prefs'
 import { type Message, type MessageResponse } from '../shared/messaging'
 
 async function bootstrap(): Promise<void> {
   await migrateIfNeeded()
+  await reattachOrphanSpaces()
   await reconcile()
   await reconcileAlarms()
   await installContextMenus()
@@ -83,6 +89,10 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return createSpace(msg.payload)
     case 'importChromeTabGroups':
       return importChromeTabGroups(msg.windowId)
+    case 'addTabsToFolder':
+      return addTabsToFolder(msg.folderId, msg.tabIds)
+    case 'importStore':
+      return importStore(msg.store, msg.currentWindowId)
     case 'renameSpace':
       return renameSpace(msg.spaceId, msg.name)
     case 'setSpaceColor':
@@ -128,6 +138,10 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return { hasToken: !!(await getGitHubToken()) }
     case 'setGitHubToken':
       return setGitHubToken(msg.token)
+    case 'getUIPrefs':
+      return getUIPrefs()
+    case 'setUIPrefs':
+      return setUIPrefs(msg.prefs)
   }
 }
 
@@ -152,6 +166,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.tabs.onAttached.addListener((tabId, info) => {
   void onTabAttached(tabId, info)
+})
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  void onWindowRemoved(windowId)
 })
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {

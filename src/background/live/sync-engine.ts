@@ -32,6 +32,22 @@ export async function syncLiveFolder(
   }
   if (windowId === undefined) return
 
+  // The owning Space's window may have been closed since the alarm was
+  // scheduled. Bail early with a recorded error rather than letting
+  // chrome.tabs.create throw "No window with id" for every item.
+  try {
+    await chrome.windows.get(windowId)
+  } catch {
+    await updateStore((s) => {
+      const f = s.folders[folderId]
+      if (f && f.live) {
+        f.live.lastSyncError = `Window ${windowId} is gone`
+        f.live.lastSyncAt = now()
+      }
+    })
+    return
+  }
+
   try {
     const items = await fetchItems(folder, fetchImpl)
     await applyDiff(folder, items, windowId)

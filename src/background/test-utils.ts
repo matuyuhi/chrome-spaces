@@ -155,6 +155,14 @@ export function setupChromeMock(): ChromeMock {
     }),
   }
 
+  const windowsApi = {
+    // Sync engine validates the windowId before creating tabs; resolve
+    // for any positive id so existing tests need no change.
+    get: vi.fn(async (id: number) => ({ id }) as chrome.windows.Window),
+    getCurrent: vi.fn(async () => ({ id: 1 }) as chrome.windows.Window),
+    onRemoved: { addListener: vi.fn(), removeListener: vi.fn() },
+  }
+
   ;(globalThis as unknown as { chrome: unknown }).chrome = {
     storage: {
       sync: makeArea(sync),
@@ -163,6 +171,7 @@ export function setupChromeMock(): ChromeMock {
     tabs: tabsApi,
     alarms: alarmsApi,
     contextMenus: contextMenusApi,
+    windows: windowsApi,
   }
 
   return { sync, local, tabs, alarms: alarmsBacking, contextMenuItems }
