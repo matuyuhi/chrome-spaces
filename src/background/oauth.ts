@@ -13,7 +13,7 @@
 //      common case — maintainer registers one OAuth App for everyone
 //      using this build).
 
-import { getGitHubClientId, setGitHubToken } from './secret-storage'
+import { getGitHubClientId, setGitHubOauthToken } from './secret-storage'
 
 const DEVICE_CODE_URL = 'https://github.com/login/device/code'
 const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token'
@@ -133,7 +133,7 @@ export async function pollDeviceFlow(
   }
   const data = (await res.json()) as AccessTokenSuccess | AccessTokenError
   if ('access_token' in data) {
-    await setGitHubToken(data.access_token)
+    await setGitHubOauthToken(data.access_token)
     return { status: 'success' }
   }
   switch (data.error) {

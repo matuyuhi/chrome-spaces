@@ -6,7 +6,7 @@ import {
   switchTo,
 } from '../space-manager'
 import { onTabCreated } from '../handlers'
-import { setGitHubToken } from '../secret-storage'
+import { setGitHubPat } from '../secret-storage'
 import { loadStore } from '../storage'
 import { setupChromeMock, type ChromeMock } from '../test-utils'
 
@@ -41,7 +41,7 @@ describe('syncLiveFolder', () => {
   })
 
   it('places synced tabs in the live folder, not in the active Space', async () => {
-    await setGitHubToken('ghp_test')
+    await setGitHubPat('ghp_test')
     const space = await createSpace({ name: 'Work', color: 'red', windowId: 1 })
     await switchTo(space.id, 1)
     const live = await createFolder({
@@ -84,7 +84,7 @@ describe('syncLiveFolder', () => {
   })
 
   it('records GitHub errors from the API', async () => {
-    await setGitHubToken('bad')
+    await setGitHubPat('bad')
     const space = await createSpace({ name: 'X', color: 'red', windowId: 1 })
     const live = await createFolder({
       parentFolderId: space.rootFolderId,
@@ -103,7 +103,7 @@ describe('syncLiveFolder', () => {
   })
 
   it('persists ETag and short-circuits on 304', async () => {
-    await setGitHubToken('ghp_test')
+    await setGitHubPat('ghp_test')
     const space = await createSpace({ name: 'E', color: 'red', windowId: 1 })
     const live = await createFolder({
       parentFolderId: space.rootFolderId,
@@ -138,7 +138,7 @@ describe('syncLiveFolder', () => {
   })
 
   it('removes managed tabs that disappeared from the result set', async () => {
-    await setGitHubToken('ghp_test')
+    await setGitHubPat('ghp_test')
     const space = await createSpace({ name: 'S', color: 'red', windowId: 1 })
     const live = await createFolder({
       parentFolderId: space.rootFolderId,

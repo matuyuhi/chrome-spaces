@@ -1,6 +1,7 @@
 import {
   type Folder,
   type FolderId,
+  type GitHubAuthMethod,
   type ItemRef,
   type LiveSource,
   type Space,
@@ -56,8 +57,10 @@ export type Message =
   | { type: 'resetTab'; tabId: number }
   | { type: 'closeTab'; tabId: number }
   | { type: 'activateTab'; tabId: number }
-  | { type: 'getGitHubToken' }
-  | { type: 'setGitHubToken'; token?: string }
+  | { type: 'getGitHubAuthState' }
+  | { type: 'setGitHubPat'; token?: string }
+  | { type: 'clearGitHubOauthToken' }
+  | { type: 'setPreferredAuth'; method?: GitHubAuthMethod }
   | { type: 'getGitHubApiBaseUrl' }
   | { type: 'setGitHubApiBaseUrl'; url?: string }
   | { type: 'getGitHubClientId' }
@@ -94,8 +97,17 @@ export interface MessageResponseMap {
   resetTab: boolean
   closeTab: void
   activateTab: void
-  getGitHubToken: { hasToken: boolean }
-  setGitHubToken: void
+  getGitHubAuthState: {
+    hasOauth: boolean
+    hasPat: boolean
+    preferred: GitHubAuthMethod | undefined
+    // The slot getGitHubToken would actually return right now, useful for
+    // the UI to show "✓ Live folders use OAuth".
+    active: GitHubAuthMethod | undefined
+  }
+  setGitHubPat: void
+  clearGitHubOauthToken: void
+  setPreferredAuth: void
   getGitHubApiBaseUrl: { url: string; isCustom: boolean }
   setGitHubApiBaseUrl: void
   getGitHubClientId: { hasOverride: boolean; hasBuiltin: boolean }

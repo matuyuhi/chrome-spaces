@@ -5,7 +5,11 @@ import {
   resolveClientId,
   startDeviceFlow,
 } from './oauth'
-import { getGitHubToken, setGitHubClientId } from './secret-storage'
+import {
+  getGitHubOauthToken,
+  getPreferredAuth,
+  setGitHubClientId,
+} from './secret-storage'
 import { setupChromeMock } from './test-utils'
 
 describe('oauth device flow', () => {
@@ -63,7 +67,8 @@ describe('oauth device flow', () => {
     )
     const out = await pollDeviceFlow('dc_123', fetchSpy as unknown as typeof fetch)
     expect(out).toEqual({ status: 'success' })
-    expect(await getGitHubToken()).toBe('gho_test')
+    expect(await getGitHubOauthToken()).toBe('gho_test')
+    expect(await getPreferredAuth()).toBe('oauth')
   })
 
   it('maps known error codes to a status without throwing', async () => {

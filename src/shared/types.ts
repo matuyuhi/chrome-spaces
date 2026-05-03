@@ -103,14 +103,25 @@ export interface SpaceStore {
   schemaVersion: number
 }
 
+export type GitHubAuthMethod = 'oauth' | 'pat'
+
 export interface SecretStore {
+  // Pre-split single token. Read by getActiveGitHubToken as a PAT
+  // fallback so old installs keep working until the user touches
+  // Settings (which will route writes to the split slots).
   githubToken?: string
+  // Token acquired via Device Flow (OAuth App). Set by pollDeviceFlow.
+  githubOauthToken?: string
+  // Personal Access Token pasted manually by the user.
+  githubPat?: string
+  // Which credential to hand out when both are present. Undefined means
+  // "fall back to whichever exists".
+  preferredAuth?: GitHubAuthMethod
   // Override for GitHub Enterprise Server (e.g., https://ghe.example.com/api/v3).
   // Undefined means use the public github.com API.
   githubApiBaseUrl?: string
-  // OAuth App client_id used for the Device Flow login. The user creates
-  // their own OAuth App (Settings → Developer settings → OAuth Apps,
-  // "Enable Device Flow" must be on) and pastes the client_id here.
+  // Override for the bundled OAuth App client_id (Settings → Advanced).
+  // Undefined means use the build-time VITE_GITHUB_CLIENT_ID.
   githubClientId?: string
 }
 
