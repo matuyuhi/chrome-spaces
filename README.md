@@ -8,6 +8,9 @@ used at all. Switching a Space hides every other window-tab via
 `chrome.tabs.hide` and shows the target Space's tabs, so the strip mirrors
 the Side Panel's view.
 
+<img width="1310" height="905" alt="image" src="https://github.com/user-attachments/assets/c01221ff-393d-4b99-b35f-6402cb64dda5" />
+
+
 ## Install (unpacked)
 
 ```bash
