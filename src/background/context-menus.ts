@@ -12,10 +12,15 @@ const ITEM_UNPIN = 'spaces:unpin-tab'
 const ITEM_RESET = 'spaces:reset-tab'
 const ITEM_SYNC_LIVE = 'spaces:sync-live'
 
+// Restrict every entry to http(s) pages — without this, 'page' also fires
+// in the extension's own popup (chrome-extension://...) which leaks the
+// items into right-clicks on Space rows.
+const WEB_PAGES = ['http://*/*', 'https://*/*']
+
 export async function installContextMenus(): Promise<void> {
   // Re-create from scratch every install/startup so that label or order
   // changes ship without leaving stale entries behind.
-  await chrome.contextMenus.removeAll()
+  chrome.contextMenus.removeAll()
   chrome.contextMenus.create({
     id: ITEM_SYNC_LIVE,
     title: 'Sync this Live folder',
@@ -24,21 +29,25 @@ export async function installContextMenus(): Promise<void> {
     // 'frame' means the entry shows up when right-clicking the page of a
     // Live folder PR/issue. Non-live pages just no-op the click.
     contexts: ['page', 'frame'],
+    documentUrlPatterns: WEB_PAGES,
   })
   chrome.contextMenus.create({
     id: ITEM_PIN,
     title: 'Pin tab to current URL',
     contexts: ['page', 'frame'],
+    documentUrlPatterns: WEB_PAGES,
   })
   chrome.contextMenus.create({
     id: ITEM_UNPIN,
     title: 'Unpin tab',
     contexts: ['page', 'frame'],
+    documentUrlPatterns: WEB_PAGES,
   })
   chrome.contextMenus.create({
     id: ITEM_RESET,
     title: 'Reset tab to base URL',
     contexts: ['page', 'frame'],
+    documentUrlPatterns: WEB_PAGES,
   })
 }
 
