@@ -107,7 +107,12 @@ export type SearchResult =
 export interface FetchOptions {
   etag?: string
   fetch?: typeof fetch
+  // Defaults to https://api.github.com. For GHES set the instance's
+  // REST root (e.g., https://ghe.example.com/api/v3).
+  apiBaseUrl?: string
 }
+
+const DEFAULT_API_BASE = 'https://api.github.com'
 
 export async function fetchSearchResults(
   source: LiveSource,
@@ -115,8 +120,9 @@ export async function fetchSearchResults(
   options: FetchOptions = {},
 ): Promise<SearchResult> {
   const fetchImpl = options.fetch ?? fetch
+  const base = (options.apiBaseUrl ?? DEFAULT_API_BASE).replace(/\/+$/, '')
   const query = buildQuery(source)
-  const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=50`
+  const url = `${base}/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=50`
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,

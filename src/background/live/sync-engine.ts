@@ -6,7 +6,7 @@ import {
   isLiveFolder,
 } from '../../shared/types'
 import { loadStore, updateStore } from '../storage'
-import { getGitHubToken } from '../secret-storage'
+import { getGitHubApiBaseUrl, getGitHubToken } from '../secret-storage'
 import {
   fetchSearchResults,
   GitHubError,
@@ -111,9 +111,11 @@ async function fetchItems(folder: Folder, fetchImpl: typeof fetch): Promise<Sear
       throw new Error(
         'GitHub token not configured. Open Spaces side panel → Settings → paste a PAT.',
       )
+    const apiBaseUrl = await getGitHubApiBaseUrl()
     return fetchSearchResults(folder.live.source, token, {
       etag: folder.live.etag,
       fetch: fetchImpl,
+      apiBaseUrl,
     })
   }
   throw new Error(

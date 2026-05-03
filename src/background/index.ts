@@ -34,7 +34,13 @@ import { syncLiveFolder } from './live/sync-engine'
 import { handleContextMenuClick, installContextMenus } from './context-menus'
 import { reconcile } from './reconcile'
 import { loadStore, migrateIfNeeded } from './storage'
-import { getGitHubToken, setGitHubToken } from './secret-storage'
+import {
+  DEFAULT_GITHUB_API_BASE,
+  getGitHubApiBaseUrl,
+  getGitHubToken,
+  setGitHubApiBaseUrl,
+  setGitHubToken,
+} from './secret-storage'
 import { getUIPrefs, setUIPrefs } from './ui-prefs'
 import { type Message, type MessageResponse } from '../shared/messaging'
 
@@ -138,6 +144,12 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return { hasToken: !!(await getGitHubToken()) }
     case 'setGitHubToken':
       return setGitHubToken(msg.token)
+    case 'getGitHubApiBaseUrl': {
+      const url = await getGitHubApiBaseUrl()
+      return { url, isCustom: url !== DEFAULT_GITHUB_API_BASE }
+    }
+    case 'setGitHubApiBaseUrl':
+      return setGitHubApiBaseUrl(msg.url)
     case 'getUIPrefs':
       return getUIPrefs()
     case 'setUIPrefs':

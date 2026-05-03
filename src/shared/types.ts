@@ -102,6 +102,9 @@ export interface SpaceStore {
 
 export interface SecretStore {
   githubToken?: string
+  // Override for GitHub Enterprise Server (e.g., https://ghe.example.com/api/v3).
+  // Undefined means use the public github.com API.
+  githubApiBaseUrl?: string
 }
 
 export function emptyStore(): SpaceStore {

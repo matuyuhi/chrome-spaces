@@ -104,6 +104,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [hasToken, setHasToken] = useState<boolean | undefined>(undefined)
   const [saved, setSaved] = useState(false)
   const [fontSize, setFontSize] = useState<UIFontSize>(3)
+  const [baseUrl, setBaseUrl] = useState('')
+  const [baseUrlIsCustom, setBaseUrlIsCustom] = useState(false)
+  const [baseUrlStatus, setBaseUrlStatus] = useState<string | undefined>()
 
   useEffect(() => {
     void sendMessage({ type: 'getGitHubToken' }).then(({ hasToken }) =>
@@ -112,6 +115,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     void sendMessage({ type: 'getUIPrefs' }).then((prefs) =>
       setFontSize(prefs.fontSize),
     )
+    void sendMessage({ type: 'getGitHubApiBaseUrl' }).then(({ url, isCustom }) => {
+      setBaseUrl(isCustom ? url : '')
+      setBaseUrlIsCustom(isCustom)
+    })
   }, [])
 
   const handleSave = async () => {
@@ -144,6 +151,39 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     URL.revokeObjectURL(url)
     setBackupStatus('Exported.')
     setTimeout(() => setBackupStatus(undefined), 2000)
+  }
+
+  const handleSaveBaseUrl = async () => {
+    const trimmed = baseUrl.trim()
+    if (!trimmed) {
+      await sendMessage({ type: 'setGitHubApiBaseUrl', url: undefined })
+      setBaseUrlIsCustom(false)
+      setBaseUrlStatus('Reverted to api.github.com.')
+      setTimeout(() => setBaseUrlStatus(undefined), 2000)
+      return
+    }
+    let origin: string
+    try {
+      const u = new URL(trimmed)
+      if (u.protocol !== 'https:') throw new Error('https only')
+      origin = u.origin
+    } catch {
+      setBaseUrlStatus('Enter a full https URL (e.g. https://ghe.example.com/api/v3).')
+      return
+    }
+    const granted = await chrome.permissions.request({ origins: [`${origin}/*`] })
+    if (!granted) {
+      setBaseUrlStatus('Permission denied — base URL not saved.')
+      return
+    }
+    try {
+      await sendMessage({ type: 'setGitHubApiBaseUrl', url: trimmed })
+      setBaseUrlIsCustom(true)
+      setBaseUrlStatus('Saved.')
+      setTimeout(() => setBaseUrlStatus(undefined), 2000)
+    } catch (e) {
+      setBaseUrlStatus(e instanceof Error ? e.message : String(e))
+    }
   }
 
   const handleImportFile = async (file: File) => {
@@ -264,6 +304,33 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </a>
           .
         </p>
+      </Section>
+
+      <Section>
+        <h2>GitHub Enterprise (optional)</h2>
+        <p className="muted">
+          Point Live folders at a GHES instance. Leave empty to use{' '}
+          <code>api.github.com</code>. Format:{' '}
+          <code>https://ghe.example.com/api/v3</code>. Saving prompts Chrome
+          for permission to fetch from that origin.
+        </p>
+        <p className="muted">
+          Status:{' '}
+          {baseUrlIsCustom ? '✓ custom base URL' : '— using api.github.com'}
+        </p>
+        <input
+          type="text"
+          autoComplete="off"
+          placeholder="https://ghe.example.com/api/v3"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+        />
+        <Actions>
+          <PrimaryButton onClick={() => void handleSaveBaseUrl()}>
+            {baseUrl.trim() ? 'Save base URL' : baseUrlIsCustom ? 'Revert' : 'Save'}
+          </PrimaryButton>
+          {baseUrlStatus && <span className="muted">{baseUrlStatus}</span>}
+        </Actions>
       </Section>
     </>
   )
