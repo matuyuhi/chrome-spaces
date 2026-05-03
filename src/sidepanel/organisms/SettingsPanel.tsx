@@ -5,6 +5,37 @@ import { type SpaceStore } from '../../shared/types'
 import { applyFontSize, FONT_LABELS, FONT_SCALE, tokens } from '../theme'
 import { LinkButton, PrimaryButton, SecondaryButton } from '../atoms/Button'
 
+const DeviceCodeBox = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: ${tokens.bgSoft};
+  border: 1px solid ${tokens.accent};
+  border-radius: ${tokens.radius.md};
+  padding: 12px;
+  margin-top: 4px;
+`
+
+const DeviceCodeRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`
+
+const DeviceCode = styled.div`
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  color: ${tokens.fg};
+  text-align: center;
+  padding: 8px 0;
+  background: ${tokens.bg};
+  border-radius: ${tokens.radius.sm};
+  user-select: all;
+`
+
 const Section = styled.section`
   display: flex;
   flex-direction: column;
@@ -113,6 +144,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [hasOverride, setHasOverride] = useState<boolean | undefined>(undefined)
   const [hasBuiltin, setHasBuiltin] = useState<boolean>(false)
   const canSignIn = hasOverride || hasBuiltin
+  const [codeCopiedAt, setCodeCopiedAt] = useState<number | undefined>()
   const [oauthState, setOauthState] = useState<
     | { phase: 'idle' }
     | {
@@ -234,12 +266,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       setOauthState({ phase: 'error', message: e instanceof Error ? e.message : String(e) })
       return
     }
+    // Prefill the user_code so the verification page lands on the
+    // confirmation step instead of an empty input.
+    const verificationUri = `${device.verificationUri}?user_code=${encodeURIComponent(device.userCode)}`
     setOauthState({
       phase: 'awaiting',
       userCode: device.userCode,
-      verificationUri: device.verificationUri,
+      verificationUri,
     })
-    void chrome.tabs.create({ url: device.verificationUri })
+    // Best-effort copy so the user doesn't even need to type.
+    void navigator.clipboard.writeText(device.userCode).catch(() => {
+      /* clipboard API can be denied; the on-screen Copy button covers it */
+    })
+    void chrome.tabs.create({ url: verificationUri })
     const start = Date.now()
     let interval = device.interval
     while (Date.now() - start < device.expiresIn * 1000) {
@@ -447,14 +486,34 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </Actions>
         </details>
         {oauthState.phase === 'awaiting' && (
-          <p className="muted">
-            Enter <code>{oauthState.userCode}</code> at{' '}
-            <a href={oauthState.verificationUri} target="_blank" rel="noreferrer">
-              {oauthState.verificationUri}
-            </a>{' '}
-            (a tab was opened for you). Keep this side panel open until the flow
-            completes.
-          </p>
+          <DeviceCodeBox>
+            <p className="muted" style={{ margin: 0 }}>
+              Enter this code at{' '}
+              <a
+                href={oauthState.verificationUri}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {oauthState.verificationUri}
+              </a>{' '}
+              (a tab was opened for you):
+            </p>
+            <DeviceCodeRow>
+              <DeviceCode>{oauthState.userCode}</DeviceCode>
+              <SecondaryButton
+                onClick={() => {
+                  void navigator.clipboard.writeText(oauthState.userCode)
+                  setCodeCopiedAt(Date.now())
+                  setTimeout(() => setCodeCopiedAt(undefined), 1500)
+                }}
+              >
+                {codeCopiedAt ? 'Copied!' : 'Copy'}
+              </SecondaryButton>
+            </DeviceCodeRow>
+            <p className="muted" style={{ margin: 0 }}>
+              Keep this side panel open — it polls until you approve.
+            </p>
+          </DeviceCodeBox>
         )}
         {oauthState.phase === 'error' && (
           <p className="muted" style={{ color: 'tomato' }}>

@@ -1,13 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { startDeviceFlow, pollDeviceFlow } from './oauth'
+import {
+  BUILTIN_GITHUB_CLIENT_ID,
+  pollDeviceFlow,
+  resolveClientId,
+  startDeviceFlow,
+} from './oauth'
 import { getGitHubToken, setGitHubClientId } from './secret-storage'
 import { setupChromeMock } from './test-utils'
 
 describe('oauth device flow', () => {
   beforeEach(() => setupChromeMock())
 
-  it('refuses startDeviceFlow without a saved client_id', async () => {
-    await expect(startDeviceFlow(vi.fn())).rejects.toThrow(/client_id/)
+  it('resolveClientId prefers a saved override over the built-in', async () => {
+    await setGitHubClientId('Iv1.override')
+    expect(await resolveClientId()).toBe('Iv1.override')
+  })
+
+  it('resolveClientId falls back to the built-in when no override is saved', async () => {
+    expect(await resolveClientId()).toBe(BUILTIN_GITHUB_CLIENT_ID)
   })
 
   it('startDeviceFlow returns the device-code response', async () => {
