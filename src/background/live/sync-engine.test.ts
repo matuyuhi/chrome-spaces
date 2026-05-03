@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { syncLiveSpace } from './sync-engine'
-import { createLiveSpace, getSpace } from '../space-manager'
+import { createLiveSpace, createStaticSpace, getSpace, switchTo } from '../space-manager'
+import { onTabCreated } from '../handlers'
 import { setGitHubToken } from '../secret-storage'
 import { isLive } from '../../shared/types'
 import { setupChromeMock, type ChromeMock } from '../test-utils'
@@ -108,6 +109,56 @@ describe('syncLiveSpace', () => {
     if (after && isLive(after)) {
       expect(after.lastSyncError).toMatch(/token/i)
     }
+  })
+
+  it('keeps newly synced live tabs in the live group even when a static space is active', async () => {
+    // Reproduces the bug: user is on a static Space, then creates a Live
+    // folder. The popup does not switch active, so the static Space stays
+    // active. Without auto-grouping protection in applyDiff, the
+    // chrome.tabs.onCreated handler poaches each new live tab into the
+    // active static group before applyDiff's chrome.tabs.group call lands.
+    await setGitHubToken('ghp_test')
+    const staticSpace = await createStaticSpace({ name: 'Work', color: 'red', windowId: 1 })
+    await switchTo(staticSpace.id, 1)
+
+    const liveSpace = await createLiveSpace({
+      name: 'Reviews',
+      color: 'blue',
+      windowId: 1,
+      source: { type: 'github-prs', preset: 'review-requested' },
+    })
+
+    // Real chrome would dispatch onTabCreated as a side effect of tabs.create.
+    // Our mock doesn't, so we wire up the handler manually around the sync
+    // so the test catches a regression where applyDiff stops protecting
+    // against auto-grouping.
+    const originalCreate = chrome.tabs.create
+    chrome.tabs.create = (async (props: chrome.tabs.CreateProperties) => {
+      const tab = await originalCreate(props)
+      // Fire onTabCreated synchronously like Chrome would (and like
+      // background/index.ts's listener does).
+      void onTabCreated(tab)
+      return tab
+    }) as typeof chrome.tabs.create
+
+    const fakeFetch = vi.fn(async () =>
+      searchResponse([{ repo: 'octo/repo', number: 1 }, { repo: 'octo/repo', number: 2 }]),
+    )
+    await syncLiveSpace(liveSpace.id, fakeFetch as unknown as typeof fetch)
+
+    chrome.tabs.create = originalCreate
+
+    const updated = await getSpace(liveSpace.id)
+    if (!updated || !isLive(updated)) throw new Error('expected live space')
+    for (const m of updated.managedTabs) {
+      const tab = mock.tabs.get(m.tabId)
+      expect(tab?.groupId).toBe(liveSpace.groupId)
+    }
+    // Static space group must not have absorbed the live tabs.
+    const staticGroupTabs = [...mock.tabs.values()].filter(
+      (t) => t.groupId === staticSpace.groupId,
+    )
+    expect(staticGroupTabs).toHaveLength(1) // just the static space's own starter
   })
 
   it('records GitHub errors from the API', async () => {

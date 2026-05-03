@@ -7,6 +7,7 @@ import {
 } from '../../shared/types'
 import { loadStore, updateStore } from '../storage'
 import { getGitHubToken } from '../secret-storage'
+import { createTabInExistingGroup } from '../inflight'
 import { fetchSearchResults, GitHubError, type ItemRef } from './sources/github'
 import { diff } from './diff'
 
@@ -58,13 +59,14 @@ async function applyDiff(space: LiveSpace, items: ItemRef[]): Promise<void> {
   const created: ManagedTab[] = []
   for (const item of result.toAdd) {
     try {
-      const tab = await chrome.tabs.create({
-        url: item.url,
-        windowId: space.windowId,
-        active: false,
-      })
-      if (typeof tab.id !== 'number') continue
-      await chrome.tabs.group({ tabIds: [tab.id], groupId: space.groupId })
+      // createTabInExistingGroup pauses onTabCreated auto-grouping for the
+      // create+group window so the tab cannot be hijacked into whatever
+      // Space happens to be active in this window.
+      const tab = await createTabInExistingGroup(
+        { url: item.url, windowId: space.windowId, active: false },
+        space.groupId,
+      )
+      if (!tab || typeof tab.id !== 'number') continue
       // Live folders can fan out to dozens of PRs/issues at once. Pre-loading
       // every one of them spikes memory and chews through GitHub session
       // state for no benefit — most tabs are never opened. Wait for the URL

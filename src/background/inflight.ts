@@ -32,3 +32,54 @@ export function resumeAutoGrouping(): void {
 export function isAutoGroupingPaused(): boolean {
   return autoGroupingPauseCount > 0
 }
+
+// Creates a tab and adds it to the given Tab Group, with auto-grouping
+// paused for the duration so chrome.tabs.onCreated cannot route the tab
+// into the currently-active Space's group before our group call lands.
+// Use this for every extension-initiated tab creation that targets an
+// existing group (sync-engine.applyDiff, future popup actions, etc.).
+export async function createTabInExistingGroup(
+  props: chrome.tabs.CreateProperties,
+  groupId: number,
+): Promise<chrome.tabs.Tab | undefined> {
+  pauseAutoGrouping()
+  try {
+    const tab = await chrome.tabs.create(props)
+    if (typeof tab.id !== 'number') return undefined
+    markStarterTab(tab.id)
+    try {
+      await chrome.tabs.group({ tabIds: [tab.id], groupId })
+    } finally {
+      unmarkStarterTab(tab.id)
+    }
+    return tab
+  } finally {
+    resumeAutoGrouping()
+  }
+}
+
+// Creates a tab and starts a fresh Tab Group seeded with it. Returns the
+// tab + the new groupId. Same auto-grouping race protection as
+// createTabInExistingGroup; use this for createStaticSpace / createLiveSpace
+// / rehydrate.
+export async function createTabAsGroupSeed(
+  props: chrome.tabs.CreateProperties,
+): Promise<{ tab: chrome.tabs.Tab; groupId: number } | undefined> {
+  pauseAutoGrouping()
+  try {
+    const tab = await chrome.tabs.create(props)
+    if (typeof tab.id !== 'number') return undefined
+    markStarterTab(tab.id)
+    try {
+      const groupId = await chrome.tabs.group({
+        createProperties: { windowId: props.windowId },
+        tabIds: [tab.id],
+      })
+      return { tab, groupId }
+    } finally {
+      unmarkStarterTab(tab.id)
+    }
+  } finally {
+    resumeAutoGrouping()
+  }
+}

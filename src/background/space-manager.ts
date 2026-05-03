@@ -9,12 +9,7 @@ import {
   isLive,
 } from '../shared/types'
 import { loadStore, updateStore } from './storage'
-import {
-  markStarterTab,
-  pauseAutoGrouping,
-  resumeAutoGrouping,
-  unmarkStarterTab,
-} from './inflight'
+import { createTabAsGroupSeed } from './inflight'
 import { scheduleSync, unscheduleSync } from './live/alarms'
 import { syncLiveSpace } from './live/sync-engine'
 
@@ -29,54 +24,35 @@ export interface CreateStaticSpaceInput {
 }
 
 export async function createStaticSpace(input: CreateStaticSpaceInput): Promise<StaticSpace> {
-  console.log('[Spaces] createStaticSpace start', input)
-  pauseAutoGrouping()
-  let space: StaticSpace
-  try {
-    const tab = await chrome.tabs.create({ windowId: input.windowId, active: false })
-    console.log('[Spaces] starter tab created', tab.id)
-    if (typeof tab.id !== 'number') throw new Error('Failed to create starter tab')
-    markStarterTab(tab.id)
+  const seed = await createTabAsGroupSeed({ windowId: input.windowId, active: false })
+  if (!seed) throw new Error('Failed to create starter tab')
+  const { tab, groupId } = seed
+  await safeTabGroupUpdate(groupId, {
+    title: input.name,
+    color: input.color,
+    collapsed: false,
+  })
 
-    let groupId: number
-    try {
-      groupId = await chrome.tabs.group({
-        createProperties: { windowId: input.windowId },
-        tabIds: [tab.id],
-      })
-      console.log('[Spaces] group created', groupId)
-      await chrome.tabGroups.update(groupId, {
-        title: input.name,
-        color: input.color,
-        collapsed: false,
-      })
-    } finally {
-      unmarkStarterTab(tab.id)
-    }
-
-    const id = uid()
-    const ts = now()
-    space = {
-      kind: 'static',
-      id,
-      name: input.name,
-      color: input.color,
-      emoji: input.emoji,
-      groupId,
-      windowId: input.windowId,
-      order: 0,
-      lastActiveTabId: tab.id,
-      createdAt: ts,
-      lastAccessedAt: ts,
-    }
-
-    await updateStore((s) => {
-      space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
-      s.spaces[id] = space
-    })
-  } finally {
-    resumeAutoGrouping()
+  const id = uid()
+  const ts = now()
+  const space: StaticSpace = {
+    kind: 'static',
+    id,
+    name: input.name,
+    color: input.color,
+    emoji: input.emoji,
+    groupId,
+    windowId: input.windowId,
+    order: 0,
+    lastActiveTabId: tab.id,
+    createdAt: ts,
+    lastAccessedAt: ts,
   }
+
+  await updateStore((s) => {
+    space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
+    s.spaces[id] = space
+  })
 
   return space
 }
@@ -154,57 +130,41 @@ export interface CreateLiveSpaceInput {
 }
 
 export async function createLiveSpace(input: CreateLiveSpaceInput): Promise<LiveSpace> {
-  pauseAutoGrouping()
-  let space: LiveSpace
-  try {
-    const tab = await chrome.tabs.create({ windowId: input.windowId, active: false })
-    if (typeof tab.id !== 'number') throw new Error('Failed to create starter tab')
-    markStarterTab(tab.id)
+  const seed = await createTabAsGroupSeed({ windowId: input.windowId, active: false })
+  if (!seed) throw new Error('Failed to create starter tab')
+  const { tab, groupId } = seed
+  await safeTabGroupUpdate(groupId, {
+    title: input.name,
+    color: input.color,
+    collapsed: false,
+  })
 
-    let groupId: number
-    try {
-      groupId = await chrome.tabs.group({
-        createProperties: { windowId: input.windowId },
-        tabIds: [tab.id],
-      })
-      await chrome.tabGroups.update(groupId, {
-        title: input.name,
-        color: input.color,
-        collapsed: false,
-      })
-    } finally {
-      unmarkStarterTab(tab.id)
-    }
-
-    const id = uid()
-    const ts = now()
-    space = {
-      kind: 'live',
-      id,
-      name: input.name,
-      color: input.color,
-      emoji: input.emoji,
-      groupId,
-      windowId: input.windowId,
-      order: 0,
-      lastActiveTabId: tab.id,
-      createdAt: ts,
-      lastAccessedAt: ts,
-      source: input.source,
-      refreshIntervalMin: input.refreshIntervalMin ?? 5,
-      managedTabs: [],
-      starterTabId: tab.id,
-    }
-
-    await updateStore((s) => {
-      space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
-      s.spaces[id] = space
-    })
-
-    await scheduleSync(id, space.refreshIntervalMin)
-  } finally {
-    resumeAutoGrouping()
+  const id = uid()
+  const ts = now()
+  const space: LiveSpace = {
+    kind: 'live',
+    id,
+    name: input.name,
+    color: input.color,
+    emoji: input.emoji,
+    groupId,
+    windowId: input.windowId,
+    order: 0,
+    lastActiveTabId: tab.id,
+    createdAt: ts,
+    lastAccessedAt: ts,
+    source: input.source,
+    refreshIntervalMin: input.refreshIntervalMin ?? 5,
+    managedTabs: [],
+    starterTabId: tab.id,
   }
+
+  await updateStore((s) => {
+    space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
+    s.spaces[id] = space
+  })
+
+  await scheduleSync(id, space.refreshIntervalMin)
 
   return space
 }
@@ -391,53 +351,38 @@ export async function setLastActiveTab(windowId: number, tabId: number): Promise
 }
 
 async function rehydrateSpace(space: Space): Promise<Space> {
-  pauseAutoGrouping()
-  try {
-    const tab = await chrome.tabs.create({ windowId: space.windowId, active: false })
-    if (typeof tab.id !== 'number') throw new Error('Failed to create starter tab for rehydrate')
-    markStarterTab(tab.id)
+  const seed = await createTabAsGroupSeed({ windowId: space.windowId, active: false })
+  if (!seed) throw new Error('Failed to create starter tab for rehydrate')
+  const { tab, groupId } = seed
+  await safeTabGroupUpdate(groupId, {
+    title: space.name,
+    color: space.color,
+    collapsed: false,
+  })
 
-    let groupId: number
-    try {
-      groupId = await chrome.tabs.group({
-        createProperties: { windowId: space.windowId },
-        tabIds: [tab.id],
-      })
-      await safeTabGroupUpdate(groupId, {
-        title: space.name,
-        color: space.color,
-        collapsed: false,
-      })
-    } finally {
-      unmarkStarterTab(tab.id)
+  let updated: Space = space
+  await updateStore((s) => {
+    const sp = s.spaces[space.id]
+    if (!sp) return
+    sp.groupId = groupId
+    sp.lastActiveTabId = tab.id
+    // pinnedTabs referenced tab ids that are gone with the old group.
+    sp.pinnedTabs = undefined
+    if (isLive(sp)) {
+      // Old managedTabs are gone with the old group; the next sync will
+      // refill from the source.
+      sp.managedTabs = []
+      sp.starterTabId = tab.id
     }
+    updated = sp
+  })
 
-    let updated: Space = space
-    await updateStore((s) => {
-      const sp = s.spaces[space.id]
-      if (!sp) return
-      sp.groupId = groupId
-      sp.lastActiveTabId = tab.id
-      // pinnedTabs referenced tab ids that are gone with the old group.
-      sp.pinnedTabs = undefined
-      if (isLive(sp)) {
-        // Old managedTabs are gone with the old group; the next sync will
-        // refill from the source.
-        sp.managedTabs = []
-        sp.starterTabId = tab.id
-      }
-      updated = sp
-    })
-
-    if (isLive(updated)) {
-      // Don't await: the sync may take several seconds (network) and the
-      // caller is in the middle of a switchTo flow.
-      void syncLiveSpace(updated.id)
-    }
-    return updated
-  } finally {
-    resumeAutoGrouping()
+  if (isLive(updated)) {
+    // Don't await: the sync may take several seconds (network) and the
+    // caller is in the middle of a switchTo flow.
+    void syncLiveSpace(updated.id)
   }
+  return updated
 }
 
 export async function pinTab(tabId: number, baseUrl: string): Promise<Space | undefined> {
