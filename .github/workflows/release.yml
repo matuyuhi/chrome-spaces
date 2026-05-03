@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version on release branch
+        id: bump
+        run: |
+          git checkout -b release/tmp
+          new_version=$(npm version ${{ inputs.bump }} -m "chore(release): %s")
+          branch="release/${new_version}"
+          git branch -M "${branch}"
+          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${new_version}" >> "$GITHUB_OUTPUT"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Package extension zip
+        id: pkg
+        run: |
+          zip_name="chrome-spaces-${{ steps.bump.outputs.version }}.zip"
+          (cd dist && zip -r "../${zip_name}" .)
+          echo "zip=${zip_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Push release branch and tag
+        run: |
+          git push -u origin "${{ steps.bump.outputs.branch }}"
+          git push origin "${{ steps.bump.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.bump.outputs.tag }}" \
+            --title "${{ steps.bump.outputs.tag }}" \
+            --target "${{ steps.bump.outputs.branch }}" \
+            --generate-notes \
+            "${{ steps.pkg.outputs.zip }}"
+
+      - name: Open PR to main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "${{ steps.bump.outputs.branch }}" \
+            --title "chore(release): ${{ steps.bump.outputs.tag }}" \
+            --body "Automated release PR for **${{ steps.bump.outputs.tag }}**.
+
+Tag and GitHub Release are already published — merging this PR brings the version bump back into \`main\`.
+
+Use **Merge commit** (not squash) so the tagged commit stays in main's history."
