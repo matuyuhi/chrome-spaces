@@ -420,6 +420,34 @@ body,
   background: var(--bg-active);
 }
 
+.space-tab {
+  position: relative;
+}
+
+.space-tab.is-dragging {
+  opacity: 0.4;
+}
+
+.space-tab.reorder-before::before,
+.space-tab.reorder-after::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.space-tab.reorder-before::before {
+  left: -3px;
+}
+
+.space-tab.reorder-after::after {
+  right: -3px;
+}
+
 .space-tab[draggable='true'],
 .tab-row[draggable='true'] .tab-main {
   cursor: grab;

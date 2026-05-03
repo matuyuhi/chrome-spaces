@@ -1,127 +1,168 @@
 # Spaces
 
-Arc-like Chrome extension. Built on top of Chrome's native Tab Groups + the
-`chrome://flags/#vertical-tabs` UI, this extension layers Arc-style **Spaces**
-and **Live Folders (GitHub PRs)** on top.
+Arc-style sidebar for Chrome. Vertical tab list, nested folders per Space,
+and GitHub PR / Issue **Live folders** that auto-populate from a query.
 
-- **Spaces**: a 1:1 wrapper around a Tab Group. Switching a Space collapses
-  every other group in the window and expands the target — no tabs are lost,
-  the switch is instantaneous.
-- **Live Folders**: a Space whose tabs are auto-populated from a query
-  (currently GitHub PRs). Closed/merged PRs are removed on refresh; new ones
-  are added.
+This extension runs entirely on its own model — Chrome Tab Groups are not
+used at all. Switching a Space hides every other window-tab via
+`chrome.tabs.hide` and shows the target Space's tabs, so the strip mirrors
+the Side Panel's view.
 
 ## Install (unpacked)
 
 ```bash
-git clone … && cd chrome-ext
-npm install
-npm run build
+git clone …
+cd chrome-spaces
+npm install     # installs deps; engine pinned via .node-version (24.15.0)
+npm run build   # → dist/
 ```
 
-Then in Chrome:
+In Chrome:
 
-1. Open `chrome://extensions/`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked** → select the `dist/` directory
+1. Open `chrome://extensions`
+2. Toggle **Developer mode**
+3. **Load unpacked** → select `dist/`
+4. Click the **Spaces** icon in the toolbar — the Side Panel opens
+5. (Recommended) Hide Chrome's tab strip with
+   `chrome://flags/#vertical-tabs` → Enabled, restart
 
-(Optional but recommended) Enable Chrome's vertical tab strip:
+## Concepts
 
-1. Open `chrome://flags/#vertical-tabs`
-2. Set to **Enabled**, restart Chrome
+- **Space**: a named container, scoped to one window. Has color, optional
+  emoji, and a tree of folders / tabs.
+- **Folder**: an ordered list of items (tabs or sub-folders) inside a
+  Space. Foldable. Optional Live config (see below).
+- **Live folder**: a folder whose tabs are managed by a `LiveSource` (a
+  GitHub PR or Issue search query). Add/remove tabs follow the search
+  result on each sync.
+- **Pinned tab (snap-back)**: any tab can be assigned a base URL via
+  right-click → "Pin to current URL". Right-click → "Reset to base URL"
+  navigates the tab back even after you've drilled deeper.
+
+## Side Panel
+
+- **+** in the header creates a new empty Space.
+- **⇩N** appears when N Chrome Tab Groups exist in this window;
+  clicking imports them as Spaces.
+- **⚙** opens settings (GitHub PAT).
+- **Space pills** at the top: click to switch (other Spaces' tabs hide
+  in the strip), drag to reorder, drag a tab onto a pill to move it
+  into that Space.
+- **Space ⋯ menu**: rename, color, emoji, delete (with or without
+  closing tabs).
+- **Folder ⋯ menu**: rename, emoji, delete, edit Live config.
+- **+ Folder / + Live folder** at the bottom of any non-Live folder.
+- **Drag-and-drop**: tabs and folders. Live folders refuse drops (their
+  contents are owned by the sync engine).
+- **Tab right-click**: pin / reset / close.
+
+## GitHub Live folders
+
+1. Generate a Personal Access Token. Fine-grained PAT with
+   "Repository → Pull requests: read" + "Metadata: read" works for PRs;
+   add "Issues: read" if you want Issue folders. Classic `repo` /
+   `public_repo` also works.
+2. Side Panel → **⚙** → paste the token. Stored only in
+   `chrome.storage.local` on this device.
+3. Inside any Space, click **+ Live folder** at the bottom of the root
+   folder (or a sub-folder). Pick:
+   - **Source**: PR or Issue + preset (review-requested / assigned /
+     authored / mentioned / custom search)
+   - **User**: defaults to `@me`
+   - **Filter**: empty / `*` = all repos. A bare `acme` becomes
+     `org:acme`. `org:foo`, `user:bar`, `repo:a/b` are taken verbatim.
+     `!sb` (or `-org:sb`) excludes that org.
+   - **Refresh interval**: minutes; **0 = manual only**
+
+A Live folder shows `↻` to sync now, and a `⚠` badge if the last sync
+errored (hover for the message). Right-click any tab inside a Live
+folder's pages and pick "Sync this Live folder" to refresh from
+anywhere on the web.
 
 ## Keyboard shortcuts
 
-Chrome only auto-binds 4 extension shortcuts at install time, and most of the
-natural choices (⌘1–9) clash with Chrome's built-in tab navigation. So this
-extension ships with **no default bindings**. After installing, open
-`chrome://extensions/shortcuts` and bind whatever you like, e.g.:
+Chrome only auto-binds 4 shortcuts at install time, and the obvious
+choices (⌘1–9) collide with Chrome's own tab navigation. So this
+extension ships with **no defaults**. Open
+`chrome://extensions/shortcuts` and bind whatever you want, e.g.:
 
-| Command           | Suggested binding |
-| ----------------- | ----------------- |
-| Switch to Space 1 | ⌃⌥1               |
-| Switch to Space 2 | ⌃⌥2               |
-| …                 | …                 |
-| Switch to Space 9 | ⌃⌥9               |
-| Create new Space  | ⌃⌥N               |
+| Command            | Suggested      |
+| ------------------ | -------------- |
+| switch-space-1..9  | ⌃⌥1–9          |
+| new-space          | ⌃⌥N            |
+| reset-current-tab  | ⌃⌥⇧R           |
+| sync-current-live  | ⌃⌥⇧S           |
 
-The extension popup also has a **Configure shortcuts →** link that opens this
-page directly.
+## Architecture
 
-## GitHub Live Folders
+```
+src/
+├── background/
+│   ├── index.ts            ─ SW: bootstrap + message router
+│   ├── space-manager.ts    ─ all CRUD on Space / Folder / TabRecord
+│   ├── handlers.ts         ─ chrome.tabs / windows event sinks
+│   ├── reconcile.ts        ─ prune dead tab refs at startup
+│   ├── storage.ts          ─ chrome.storage.local + v1 → v2 migration
+│   ├── secret-storage.ts   ─ separate key for the GitHub PAT
+│   ├── commands.ts         ─ chrome.commands dispatch
+│   ├── context-menus.ts    ─ chrome.contextMenus + handler
+│   └── live/
+│       ├── alarms.ts       ─ per-folder sync schedule
+│       ├── sync-engine.ts  ─ fetch + diff + apply
+│       ├── diff.ts         ─ pure list-diff
+│       └── sources/
+│           └── github.ts   ─ Search API client
+├── shared/
+│   ├── types.ts            ─ schema v2: Space + Folder + ItemRef + …
+│   └── messaging.ts        ─ typed sendMessage RPC
+└── sidepanel/
+    ├── index.html
+    ├── main.tsx
+    ├── App.tsx             ─ tree, DnD, menus, settings
+    ├── LiveFolderForm.tsx
+    └── sidepanel.css
+```
 
-Live Folders auto-populate a Space with PR tabs from GitHub.
+### Switching a Space
 
-### 1. Generate a Personal Access Token
+`switchTo(spaceId, windowId)`:
 
-1. Go to <https://github.com/settings/tokens?type=beta> (fine-grained PAT)
-2. Scope it to the repos you care about
-3. Required permissions:
-   - **Repository access**: the repos whose PRs you want to see
-   - **Pull requests**: read
-   - **Metadata**: read (auto-required)
+1. Persist `activeSpaceByWindow[windowId] = spaceId` first so any tab
+   event during the switch sees the new state.
+2. Activate one of the target Space's tabs (lastActiveTabId, or the
+   first known tab, or a freshly-created starter tab if the Space is
+   empty). Chrome refuses to hide the active tab.
+3. `chrome.tabs.show(targetTabIds)` — idempotent for tabs already
+   visible.
+4. `chrome.tabs.hide(everyOtherTabInWindow)`.
 
-Classic tokens also work — `repo` (private) or `public_repo` (public only) is
-enough.
+### Live folder ownership
 
-### 2. Save the token in the extension
+A Live folder's `items` is rewritten by the sync engine on every run.
+After applying the diff, the engine strips its newly-claimed tabIds
+from any other folder that may have grabbed them via
+`chrome.tabs.onCreated → registerTab` while the network call was in
+flight. The `moveItem` operation also refuses to drop user-owned items
+into a Live folder.
 
-1. Open the popup → click **⚙ Settings**
-2. Paste the PAT, click **Save token**
+### Migration
 
-The token lives only in `chrome.storage.local` on this device — it is **never**
-synced via `chrome.storage.sync`, never sent anywhere except api.github.com.
-
-### 3. Create a Live Folder
-
-Popup → **+ Live Folder** → pick a preset and a refresh interval:
-
-| Preset             | Equivalent GitHub search                     |
-| ------------------ | -------------------------------------------- |
-| Review requested   | `is:pr is:open review-requested:@me`         |
-| Assigned to me     | `is:pr is:open assignee:@me`                 |
-| Authored by me     | `is:pr is:open author:@me`                   |
-| Custom             | (your own search query, free-form)           |
-
-The folder syncs immediately, then again every N minutes (default 5). Closed
-or merged PRs are removed on the next sync; newly opened ones are added.
-
-If a sync fails (e.g., bad token, rate limited), the row gets a ⚠ badge and
-the popup row's `⋯` menu shows the error. The next scheduled sync will retry.
-
-## Architecture, briefly
-
-- `src/background/` — MV3 service worker
-  - `space-manager.ts` — Space CRUD, switch logic
-  - `storage.ts` — `chrome.storage.sync` wrapper (metadata)
-  - `secret-storage.ts` — `chrome.storage.local` wrapper (token only)
-  - `handlers.ts` — `chrome.tabs` / `chrome.tabGroups` event sync
-  - `commands.ts` — keyboard shortcut dispatch
-  - `reconcile.ts` — startup-time integrity (mark unmounted, optional adopt)
-  - `live/sync-engine.ts` — pull source → diff → apply → persist
-  - `live/diff.ts` — pure list-diff
-  - `live/alarms.ts` — `chrome.alarms` wiring per Live Space
-  - `live/sources/github.ts` — GitHub Search API client
-- `src/popup/` — React popup UI
-- `src/shared/types.ts` — shared types
-
-## Limitations
-
-- **Same browser profile**: all Spaces share cookies/login state. The
-  extension does not (and cannot, from a Chrome extension API standpoint)
-  isolate per-Space profiles. If you need a separate Google/etc account, use
-  Chrome's native profile picker.
-- **One window per `windowId`**: a Tab Group is window-bound. Each Chrome
-  window has its own Spaces.
-- **Manual shortcut binding**: see above.
+Schema v1 (Tab Group based) is rewritten to v2 once on first run after
+upgrade. Each old Static Space becomes a Space with the group's tabs in
+its root folder; each old Live Space becomes a Space with one Live
+folder in its root, carrying over the source query, managed tabs, and
+sync history. The underlying Chrome Tab Groups are ungrouped.
 
 ## Development
 
 ```bash
-npm test         # vitest run
+npm test           # vitest run
 npm run test:watch
-npm run build    # tsc + vite build → dist/
-npm run dev      # vite dev (HMR for popup; SW reloads via crxjs)
+npm run build      # tsc + vite build → dist/
+npm run dev        # vite dev (HMR for side panel; SW reloads via crxjs)
 ```
 
-There is no Web Store release. This is for local unpacked install only.
+Tests run in the `node` environment with a fake `globalThis.chrome`
+installed by `setupChromeMock()` (see `src/background/test-utils.ts`).
+
+There is no Web Store release. Local unpacked install only.

@@ -54,10 +54,11 @@ type DropPos =
   | { kind: 'after-item'; folderId: FolderId; index: number }
   | { kind: 'into-folder'; folderId: FolderId }
   | { kind: 'into-space'; spaceId: SpaceId; folderId: FolderId }
+  | { kind: 'reorder-space'; targetSpaceId: SpaceId; position: 'before' | 'after' }
 
-interface DragState {
-  item: ItemRef
-}
+type DragState =
+  | { kind: 'item'; item: ItemRef }
+  | { kind: 'space'; spaceId: SpaceId }
 
 function dropPosKey(p: DropPos): string {
   switch (p.kind) {
@@ -68,6 +69,8 @@ function dropPosKey(p: DropPos): string {
       return `into-folder:${p.folderId}`
     case 'into-space':
       return `into-space:${p.spaceId}`
+    case 'reorder-space':
+      return `reorder-space:${p.targetSpaceId}:${p.position}`
   }
 }
 
@@ -114,40 +117,70 @@ export function App() {
   }, [])
 
   const finalizeDrop = useCallback(async () => {
-    if (!drag || !dropPos) {
+    if (!drag || !dropPos || windowId === undefined) {
       setDrag(undefined)
       setDropPos(undefined)
       return
     }
-    const { item } = drag
+    const dragSnap = drag
     const target = dropPos
     setDrag(undefined)
     setDropPos(undefined)
 
-    let toFolderId: FolderId
-    let toIndex: number
-    switch (target.kind) {
-      case 'before-item':
-        toFolderId = target.folderId
-        toIndex = target.index
-        break
-      case 'after-item':
-        toFolderId = target.folderId
-        toIndex = target.index + 1
-        break
-      case 'into-folder':
-      case 'into-space':
-        toFolderId = target.folderId
-        toIndex = Number.MAX_SAFE_INTEGER
-        break
-    }
     try {
-      await sendMessage({ type: 'moveItem', item, toFolderId, toIndex })
-      await refresh()
+      if (dragSnap.kind === 'space' && target.kind === 'reorder-space') {
+        // Compute the new ordered list of Space ids in this window.
+        const ordered = (
+          await sendMessage({ type: 'getStore' })
+        ).spaces
+        const inWindow = Object.values(ordered)
+          .filter((sp) => sp.windowId === windowId)
+          .sort((a, b) => a.order - b.order)
+        const sourceIdx = inWindow.findIndex((sp) => sp.id === dragSnap.spaceId)
+        const targetIdx = inWindow.findIndex((sp) => sp.id === target.targetSpaceId)
+        if (sourceIdx === -1 || targetIdx === -1) return
+        let insertAt = targetIdx + (target.position === 'after' ? 1 : 0)
+        if (sourceIdx < insertAt) insertAt -= 1
+        if (insertAt === sourceIdx) return
+        const next = [...inWindow]
+        const [moved] = next.splice(sourceIdx, 1)
+        if (!moved) return
+        next.splice(insertAt, 0, moved)
+        await sendMessage({
+          type: 'reorderSpaces',
+          windowId,
+          orderedIds: next.map((sp) => sp.id),
+        })
+        await refresh()
+        return
+      }
+      if (dragSnap.kind === 'item') {
+        let toFolderId: FolderId
+        let toIndex: number
+        switch (target.kind) {
+          case 'before-item':
+            toFolderId = target.folderId
+            toIndex = target.index
+            break
+          case 'after-item':
+            toFolderId = target.folderId
+            toIndex = target.index + 1
+            break
+          case 'into-folder':
+          case 'into-space':
+            toFolderId = target.folderId
+            toIndex = Number.MAX_SAFE_INTEGER
+            break
+          case 'reorder-space':
+            return // mismatched: item drop on space-reorder target
+        }
+        await sendMessage({ type: 'moveItem', item: dragSnap.item, toFolderId, toIndex })
+        await refresh()
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [drag, dropPos, refresh])
+  }, [drag, dropPos, windowId, refresh])
 
   useEffect(() => {
     void refresh()
@@ -336,48 +369,83 @@ export function App() {
       )}
 
       <div className="space-tabs">
-        {spaces.map((sp) => (
-          <SpaceTab
-            key={sp.id}
-            space={sp}
-            active={sp.id === active?.id}
-            isDropTarget={
-              dropPos?.kind === 'into-space' && dropPos.spaceId === sp.id
-            }
-            onClick={async () => {
-              try {
-                await sendMessage({ type: 'switchTo', spaceId: sp.id, windowId })
-                await refresh()
-              } catch (e) {
-                handleError(e)
+        {spaces.map((sp) => {
+          const isDragSource = drag?.kind === 'space' && drag.spaceId === sp.id
+          const reorderHere =
+            drag?.kind === 'space' &&
+            !isDragSource &&
+            dropPos?.kind === 'reorder-space' &&
+            dropPos.targetSpaceId === sp.id
+              ? dropPos.position
+              : undefined
+          return (
+            <SpaceTab
+              key={sp.id}
+              space={sp}
+              active={sp.id === active?.id}
+              isDragging={isDragSource}
+              isItemDropTarget={
+                drag?.kind === 'item' &&
+                dropPos?.kind === 'into-space' &&
+                dropPos.spaceId === sp.id
               }
-            }}
-            onDragOver={
-              drag
-                ? (e) => {
-                    e.preventDefault()
-                    e.dataTransfer.dropEffect = 'move'
-                    const next: DropPos = {
-                      kind: 'into-space',
-                      spaceId: sp.id,
-                      folderId: sp.rootFolderId,
+              reorderEdge={reorderHere}
+              onClick={async () => {
+                try {
+                  await sendMessage({ type: 'switchTo', spaceId: sp.id, windowId })
+                  await refresh()
+                } catch (e) {
+                  handleError(e)
+                }
+              }}
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', sp.id)
+                setDrag({ kind: 'space', spaceId: sp.id })
+              }}
+              onDragEnd={() => {
+                setDrag(undefined)
+                setDropPos(undefined)
+              }}
+              onDragOver={
+                drag
+                  ? (e) => {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      let next: DropPos
+                      if (drag.kind === 'space') {
+                        if (drag.spaceId === sp.id) return
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const before = e.clientX - rect.left < rect.width / 2
+                        next = {
+                          kind: 'reorder-space',
+                          targetSpaceId: sp.id,
+                          position: before ? 'before' : 'after',
+                        }
+                      } else {
+                        next = {
+                          kind: 'into-space',
+                          spaceId: sp.id,
+                          folderId: sp.rootFolderId,
+                        }
+                      }
+                      if (!dropPos || dropPosKey(dropPos) !== dropPosKey(next)) {
+                        setDropPos(next)
+                      }
                     }
-                    if (!dropPos || dropPosKey(dropPos) !== dropPosKey(next)) {
-                      setDropPos(next)
+                  : undefined
+              }
+              onDrop={
+                drag
+                  ? (e) => {
+                      e.preventDefault()
+                      void finalizeDrop()
                     }
-                  }
-                : undefined
-            }
-            onDrop={
-              drag
-                ? (e) => {
-                    e.preventDefault()
-                    void finalizeDrop()
-                  }
-                : undefined
-            }
-          />
-        ))}
+                  : undefined
+              }
+            />
+          )
+        })}
       </div>
 
       {!active ? (
@@ -409,22 +477,43 @@ export function App() {
 function SpaceTab({
   space,
   active,
-  isDropTarget,
+  isDragging,
+  isItemDropTarget,
+  reorderEdge,
   onClick,
+  onDragStart,
+  onDragEnd,
   onDragOver,
   onDrop,
 }: {
   space: Space
   active: boolean
-  isDropTarget?: boolean
+  isDragging?: boolean
+  isItemDropTarget?: boolean
+  reorderEdge?: 'before' | 'after'
   onClick: () => void
+  onDragStart: (e: React.DragEvent) => void
+  onDragEnd: () => void
   onDragOver?: (e: React.DragEvent) => void
   onDrop?: (e: React.DragEvent) => void
 }) {
+  const className = [
+    'space-tab',
+    active && 'is-active',
+    isDragging && 'is-dragging',
+    isItemDropTarget && 'is-drop-target',
+    reorderEdge === 'before' && 'reorder-before',
+    reorderEdge === 'after' && 'reorder-after',
+  ]
+    .filter(Boolean)
+    .join(' ')
   return (
     <button
-      className={`space-tab ${active ? 'is-active' : ''} ${isDropTarget ? 'is-drop-target' : ''}`}
+      className={className}
       onClick={onClick}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDrop={onDrop}
       title={space.name}
@@ -612,13 +701,18 @@ function FolderView(props: FolderViewProps) {
   const isDropInto =
     props.dropPos?.kind === 'into-folder' && props.dropPos.folderId === folder.id
   const isDraggingThis =
-    props.drag?.item.kind === 'folder' && props.drag.item.folderId === folder.id
+    props.drag?.kind === 'item' &&
+    props.drag.item.kind === 'folder' &&
+    props.drag.item.folderId === folder.id
   // The folder cannot accept a drop coming from itself (would create a
   // self-cycle) — guard before allowing the into-folder target.
   const acceptsInto =
-    props.drag &&
+    props.drag?.kind === 'item' &&
     !isLive &&
-    !(props.drag.item.kind === 'folder' && props.drag.item.folderId === folder.id)
+    !(
+      props.drag.item.kind === 'folder' &&
+      props.drag.item.folderId === folder.id
+    )
 
   return (
     <div className={`folder ${isDraggingThis ? 'is-dragging' : ''}`}>
@@ -631,7 +725,10 @@ function FolderView(props: FolderViewProps) {
             e.stopPropagation()
             e.dataTransfer.effectAllowed = 'move'
             e.dataTransfer.setData('text/plain', folder.id)
-            props.setDrag({ item: { kind: 'folder', folderId: folder.id } })
+            props.setDrag({
+              kind: 'item',
+              item: { kind: 'folder', folderId: folder.id },
+            })
           }}
           onDragEnd={() => {
             props.setDrag(undefined)
@@ -889,7 +986,10 @@ function ItemRow(props: ItemRowProps) {
   const tabRecord = store.tabs[item.tabId]
   const isPinned = !!tabRecord?.baseUrl
   const tabMenuId = `tab:${item.tabId}`
-  const isDragging = props.drag?.item.kind === 'tab' && props.drag.item.tabId === item.tabId
+  const isDragging =
+    props.drag?.kind === 'item' &&
+    props.drag.item.kind === 'tab' &&
+    props.drag.item.tabId === item.tabId
   const isDropAbove =
     props.dropPos?.kind === 'before-item' &&
     props.dropPos.folderId === parentFolderId &&
@@ -917,12 +1017,15 @@ function ItemRow(props: ItemRowProps) {
           ? (e) => {
               e.dataTransfer.effectAllowed = 'move'
               e.dataTransfer.setData('text/plain', String(item.tabId))
-              props.setDrag({ item: { kind: 'tab', tabId: item.tabId } })
+              props.setDrag({
+                kind: 'item',
+                item: { kind: 'tab', tabId: item.tabId },
+              })
             }
           : undefined
       }
       onDragOver={
-        props.drag && !parentIsLive
+        props.drag?.kind === 'item' && !parentIsLive
           ? (e) => {
               e.preventDefault()
               e.dataTransfer.dropEffect = 'move'
@@ -941,7 +1044,7 @@ function ItemRow(props: ItemRowProps) {
           : undefined
       }
       onDrop={
-        props.drag && !parentIsLive
+        props.drag?.kind === 'item' && !parentIsLive
           ? (e) => {
               e.preventDefault()
               void props.onFinalizeDrop()
