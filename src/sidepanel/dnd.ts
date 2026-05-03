@@ -37,5 +37,7 @@ export function dropPosKey(p: DropPos): string {
 }
 
 export function itemKey(it: ItemRef, idx: number): string {
-  return it.kind === 'tab' ? `t:${it.tabId}` : `f:${it.folderId}:${idx}`
+  if (it.kind === 'tab') return `t:${it.tabId}`
+  if (it.kind === 'folder') return `f:${it.folderId}:${idx}`
+  return `l:${it.externalId}`
 }

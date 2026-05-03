@@ -61,7 +61,7 @@ export async function syncLiveFolder(
       })
       return
     }
-    await applyDiff(folder, result.items, windowId)
+    await applyDiff(folder, result.items)
     await updateStore((s) => {
       const f = s.folders[folderId]
       if (f && f.live) {
@@ -106,48 +106,43 @@ async function fetchItems(folder: Folder, fetchImpl: typeof fetch): Promise<Sear
   })
 }
 
-async function applyDiff(
-  folder: Folder,
-  items: LiveItem[],
-  windowId: number,
-): Promise<void> {
+async function applyDiff(folder: Folder, items: LiveItem[]): Promise<void> {
   if (!folder.live) return
   const result = diff(folder.live.managedTabs, items)
 
-  const created: ManagedTab[] = []
-  for (const item of result.toAdd) {
+  // Disappeared upstream: if a managedTab had been materialized into a
+  // real Chrome tab, close it. Unmaterialized entries just vanish.
+  const removedTabIds = result.toRemove
+    .map((t) => t.tabId)
+    .filter((id): id is number => typeof id === 'number')
+  if (removedTabIds.length > 0) {
     try {
-      const tab = await chrome.tabs.create({ url: item.url, windowId, active: false })
-      if (typeof tab.id !== 'number') continue
-      created.push({
-        externalId: item.externalId,
-        url: item.url,
-        tabId: tab.id,
-        addedAt: now(),
-      })
-    } catch (e) {
-      console.error('[Spaces] failed to add live tab', item.externalId, e)
-    }
-  }
-
-  if (result.toRemove.length > 0) {
-    const ids = result.toRemove.map((t) => t.tabId)
-    try {
-      await chrome.tabs.remove(ids)
+      await chrome.tabs.remove(removedTabIds)
     } catch {
       /* tab(s) may already be gone */
     }
   }
 
-  const finalManaged = [
-    ...result.toKeep.map(({ managed, fetched }) => ({ ...managed, url: fetched.url })),
-    ...created,
+  // Carry materialized tabId forward for items still present, refresh
+  // url/title from upstream. New items start unmaterialized.
+  const finalManaged: ManagedTab[] = [
+    ...result.toKeep.map(({ managed, fetched }) => ({
+      ...managed,
+      url: fetched.url,
+      title: fetched.title ?? managed.title,
+    })),
+    ...result.toAdd.map((item) => ({
+      externalId: item.externalId,
+      url: item.url,
+      title: item.title,
+      addedAt: now(),
+    })),
   ]
 
-  let starterToClose: number | undefined
-  if (folder.live.starterTabId !== undefined && finalManaged.length > 0) {
-    starterToClose = folder.live.starterTabId
-  }
+  // starterTabId is a v2 leftover (anchor tab so the live folder was
+  // visible in the strip). With link rendering the folder is always
+  // visible, so close any lingering anchor.
+  const starterToClose = folder.live.starterTabId
   if (starterToClose !== undefined) {
     try {
       await chrome.tabs.remove(starterToClose)
@@ -161,26 +156,13 @@ async function applyDiff(
     if (!f || !f.live) return
     f.live.managedTabs = finalManaged
     if (starterToClose !== undefined) f.live.starterTabId = undefined
-    // Sync the folder's items list with managedTabs (Live folders own
-    // their items deterministically — no manual reordering inside).
-    f.items = finalManaged.map((m) => ({ kind: 'tab' as const, tabId: m.tabId }))
-    // chrome.tabs.onCreated may have fired between our chrome.tabs.create
-    // call and this updateStore, in which case handlers.registerTab
-    // already appended the new tab to the active Space's root folder.
-    // Strip those tabIds from any folder that isn't this Live one so the
-    // tab is owned by exactly one place.
-    const claimed = new Set(finalManaged.map((m) => m.tabId))
-    for (const other of Object.values(s.folders)) {
-      if (other.id === folder.id) continue
-      other.items = other.items.filter(
-        (it) => !(it.kind === 'tab' && claimed.has(it.tabId)),
-      )
-    }
-    // TabRecord registration for the new tabs.
-    for (const m of finalManaged) {
-      if (!s.tabs[m.tabId]) s.tabs[m.tabId] = { tabId: m.tabId, windowId }
-    }
-    for (const t of result.toRemove) delete s.tabs[t.tabId]
+    // Sync the folder's items list with managedTabs. Live folders own
+    // their items deterministically — kind:'live' refs by externalId.
+    f.items = finalManaged.map((m) => ({
+      kind: 'live' as const,
+      externalId: m.externalId,
+    }))
+    for (const id of removedTabIds) delete s.tabs[id]
   })
 }
 

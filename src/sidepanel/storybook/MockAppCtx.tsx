@@ -8,7 +8,7 @@ const EMPTY: SpaceStore = {
   folders: {},
   tabs: {},
   activeSpaceByWindow: {},
-  schemaVersion: 2,
+  schemaVersion: 3,
 }
 
 interface Overrides {
@@ -57,7 +57,7 @@ export function MockProvider({
 // Convenience: build a SpaceStore + tabs map with a sensible shape.
 export function makeFixture(): { store: SpaceStore; tabs: Record<number, TabInfo> } {
   const store: SpaceStore = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     spaces: {
       sp1: {
         id: 'sp1',
@@ -97,9 +97,9 @@ export function makeFixture(): { store: SpaceStore; tabs: Record<number, TabInfo
         name: 'PRs assigned',
         collapsed: false,
         items: [
-          { kind: 'tab', tabId: 200 },
-          { kind: 'tab', tabId: 201 },
-          { kind: 'tab', tabId: 202 },
+          { kind: 'live', externalId: 'a/b#1' },
+          { kind: 'live', externalId: 'a/b#2' },
+          { kind: 'live', externalId: 'a/c#9' },
         ],
         live: {
           source: { type: 'github-prs', preset: 'assigned' },
@@ -108,19 +108,20 @@ export function makeFixture(): { store: SpaceStore; tabs: Record<number, TabInfo
             {
               externalId: 'a/b#1',
               url: 'https://github.com/a/b/pull/1',
+              title: 'Bump axios from 1.13.6 to 1.16.0 by dependabot',
               tabId: 200,
               addedAt: 0,
             },
             {
               externalId: 'a/b#2',
               url: 'https://github.com/a/b/pull/2',
-              tabId: 201,
+              title: 'Add Sentry SDK',
               addedAt: 0,
             },
             {
               externalId: 'a/c#9',
               url: 'https://github.com/a/c/pull/9',
-              tabId: 202,
+              title: 'Refactor live engine to use folder ids',
               addedAt: 0,
             },
           ],

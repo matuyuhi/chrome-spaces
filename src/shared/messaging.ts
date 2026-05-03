@@ -51,6 +51,7 @@ export type Message =
       refreshIntervalMin?: number
     }
   | { type: 'syncLiveFolder'; folderId: FolderId }
+  | { type: 'materializeLiveTab'; folderId: FolderId; externalId: string }
   | { type: 'moveItem'; item: ItemRef; toFolderId: FolderId; toIndex: number }
   | { type: 'pinTab'; tabId: number; baseUrl: string }
   | { type: 'unpinTab'; tabId: number }
@@ -91,6 +92,7 @@ export interface MessageResponseMap {
   deleteFolder: void
   updateLiveFolder: Folder | undefined
   syncLiveFolder: void
+  materializeLiveTab: number | undefined
   moveItem: void
   pinTab: void
   unpinTab: void

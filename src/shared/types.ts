@@ -14,7 +14,11 @@ export type SpaceColor = chrome.tabGroups.ColorEnum
 export interface ManagedTab {
   externalId: string
   url: string
-  tabId: number
+  title?: string
+  // Optional: live items render as plain links until the user clicks
+  // them. tabId is only set once a Chrome tab has been created for the
+  // item (and gets cleared again when that tab is closed).
+  tabId?: number
   addedAt: number
 }
 
@@ -50,13 +54,14 @@ export interface LiveConfig {
   etag?: string
 }
 
-// An item inside a Folder: either a tracked tab (by tabId) or a nested
-// Folder reference. The tab/folder records themselves live in
-// SpaceStore.folders / SpaceStore.tabs so refs can move between parents
-// without rewriting the heavy fields.
+// An item inside a Folder: a tracked tab (by tabId), a nested Folder
+// reference, or a Live entry pointing at one of the parent folder's
+// managedTabs by externalId. Live entries can be materialized
+// (managedTab.tabId set, real Chrome tab) or not (link only).
 export type ItemRef =
   | { kind: 'tab'; tabId: number }
   | { kind: 'folder'; folderId: FolderId }
+  | { kind: 'live'; externalId: string }
 
 export interface TabRecord {
   // tabId doubles as the record id — Chrome guarantees uniqueness for
@@ -93,7 +98,7 @@ export interface Space {
   lastAccessedAt: number
 }
 
-export const CURRENT_SCHEMA_VERSION = 2
+export const CURRENT_SCHEMA_VERSION = 3
 
 export interface SpaceStore {
   spaces: Record<SpaceId, Space>
@@ -154,7 +159,10 @@ export function* walkFolders(
   }
 }
 
-// Collect every tabId reachable from a Space's root, depth-first.
+// Collect every tabId reachable from a Space's root, depth-first. This
+// covers both plain tabs and the *materialized* tabId on a live folder's
+// managedTabs (live entries that haven't been clicked yet have no tabId
+// and contribute nothing).
 export function collectSpaceTabIds(store: SpaceStore, spaceId: SpaceId): number[] {
   const space = store.spaces[spaceId]
   if (!space) return []
@@ -162,6 +170,11 @@ export function collectSpaceTabIds(store: SpaceStore, spaceId: SpaceId): number[
   for (const folder of walkFolders(store, space.rootFolderId)) {
     for (const item of folder.items) {
       if (item.kind === 'tab') ids.push(item.tabId)
+    }
+    if (folder.live) {
+      for (const m of folder.live.managedTabs) {
+        if (typeof m.tabId === 'number') ids.push(m.tabId)
+      }
     }
   }
   return ids
@@ -174,6 +187,7 @@ export function findContainingFolder(
 ): Folder | undefined {
   for (const folder of walkFolders(store, rootFolderId)) {
     if (folder.items.some((i) => i.kind === 'tab' && i.tabId === tabId)) return folder
+    if (folder.live?.managedTabs.some((m) => m.tabId === tabId)) return folder
   }
   return undefined
 }

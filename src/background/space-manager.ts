@@ -277,7 +277,12 @@ export async function deleteFolder(
     folderIdsToDelete.push(fid)
     for (const item of f.items) {
       if (item.kind === 'tab') tabIdsInside.push(item.tabId)
-      else visit(item.folderId)
+      else if (item.kind === 'folder') visit(item.folderId)
+    }
+    if (f.live) {
+      for (const m of f.live.managedTabs) {
+        if (typeof m.tabId === 'number') tabIdsInside.push(m.tabId)
+      }
     }
   }
   visit(id)
@@ -323,6 +328,8 @@ export async function moveItem(input: MoveItemInput): Promise<void> {
     // Refuse to drop user content into a Live folder: sync engine owns
     // those items deterministically.
     if (target.live) return
+    // Live refs only make sense inside their owning folder.
+    if (input.item.kind === 'live') return
     // Refuse cycles: cannot move a folder into itself or a descendant.
     if (input.item.kind === 'folder') {
       if (input.item.folderId === input.toFolderId) return
@@ -351,6 +358,7 @@ export async function moveItem(input: MoveItemInput): Promise<void> {
 function sameItem(a: ItemRef, b: ItemRef): boolean {
   if (a.kind === 'tab' && b.kind === 'tab') return a.tabId === b.tabId
   if (a.kind === 'folder' && b.kind === 'folder') return a.folderId === b.folderId
+  if (a.kind === 'live' && b.kind === 'live') return a.externalId === b.externalId
   return false
 }
 
@@ -427,7 +435,13 @@ export async function dropTab(tabId: number): Promise<void> {
     for (const f of Object.values(s.folders)) {
       f.items = f.items.filter((it) => !(it.kind === 'tab' && it.tabId === tabId))
       if (f.live) {
-        f.live.managedTabs = f.live.managedTabs.filter((m) => m.tabId !== tabId)
+        // Live: closing a materialized tab returns the entry to "link"
+        // state — clear the tabId, keep the managedTab so the link
+        // re-renders (and so the next sync's diff still recognizes it
+        // via externalId).
+        for (const m of f.live.managedTabs) {
+          if (m.tabId === tabId) m.tabId = undefined
+        }
       }
     }
     for (const sp of Object.values(s.spaces)) {
@@ -743,12 +757,21 @@ export function pruneDeadTabs(s: SpaceStore, liveTabIds: Set<number>): boolean {
   let changed = false
   for (const f of Object.values(s.folders)) {
     const before = f.items.length
-    f.items = f.items.filter((it) => it.kind === 'folder' || liveTabIds.has(it.tabId))
+    f.items = f.items.filter((it) => {
+      if (it.kind === 'folder') return true
+      if (it.kind === 'live') return true
+      return liveTabIds.has(it.tabId)
+    })
     if (f.items.length !== before) changed = true
     if (f.live) {
-      const beforeM = f.live.managedTabs.length
-      f.live.managedTabs = f.live.managedTabs.filter((m) => liveTabIds.has(m.tabId))
-      if (f.live.managedTabs.length !== beforeM) changed = true
+      // Don't drop managedTabs whose tabId went away — they go back to
+      // unmaterialized link state. Keep entries with no tabId at all.
+      for (const m of f.live.managedTabs) {
+        if (typeof m.tabId === 'number' && !liveTabIds.has(m.tabId)) {
+          m.tabId = undefined
+          changed = true
+        }
+      }
     }
   }
   for (const tabId of Object.keys(s.tabs)) {
@@ -764,6 +787,116 @@ export function pruneDeadTabs(s: SpaceStore, liveTabIds: Set<number>): boolean {
     }
   }
   return changed
+}
+
+// ---- Live folder helpers ------------------------------------------------
+
+// Open a real Chrome tab for an unmaterialized live entry. If the
+// entry already has a live tabId, just activate it. Returns the
+// resulting tabId (undefined on failure).
+export async function materializeLiveTab(
+  folderId: FolderId,
+  externalId: string,
+): Promise<number | undefined> {
+  const store = await loadStore()
+  const folder = store.folders[folderId]
+  if (!folder?.live) return undefined
+  const managed = folder.live.managedTabs.find((m) => m.externalId === externalId)
+  if (!managed) return undefined
+
+  // Find the owning Space (for the windowId).
+  let windowId: number | undefined
+  for (const sp of Object.values(store.spaces)) {
+    for (const f of walkFolders(store, sp.rootFolderId)) {
+      if (f.id === folderId) {
+        windowId = sp.windowId
+        break
+      }
+    }
+    if (windowId !== undefined) break
+  }
+  if (windowId === undefined) return undefined
+
+  // Already materialized: activate that tab.
+  if (typeof managed.tabId === 'number') {
+    try {
+      await chrome.tabs.update(managed.tabId, { active: true })
+      return managed.tabId
+    } catch {
+      // tab is gone — fall through and create a fresh one.
+    }
+  }
+
+  let created: chrome.tabs.Tab
+  try {
+    created = await chrome.tabs.create({
+      url: managed.url,
+      windowId,
+      active: true,
+    })
+  } catch (e) {
+    console.error('[Spaces] failed to materialize live tab', externalId, e)
+    return undefined
+  }
+  if (typeof created.id !== 'number') return undefined
+  const newId = created.id
+  const ts = now()
+  await updateStore((s) => {
+    const f = s.folders[folderId]
+    if (!f?.live) return
+    const m = f.live.managedTabs.find((mt) => mt.externalId === externalId)
+    if (m) m.tabId = newId
+    s.tabs[newId] = {
+      ...s.tabs[newId],
+      tabId: newId,
+      windowId: windowId!,
+      lastActiveAt: ts,
+    }
+    // chrome.tabs.onCreated → registerTab may have added the new tab to
+    // the active Space's root folder concurrently. Strip it from anywhere
+    // outside the live folder (which owns it via kind:'live').
+    for (const other of Object.values(s.folders)) {
+      if (other.id === folderId) continue
+      other.items = other.items.filter(
+        (it) => !(it.kind === 'tab' && it.tabId === newId),
+      )
+    }
+  })
+  return newId
+}
+
+// At SW bootstrap, after Chrome restart, every previously-materialized
+// live tab is gone (or has a fresh tabId we don't know about). Walk
+// every managedTab.tabId, drop the ones that no longer correspond to a
+// real tab. Reconcile() handles plain tabs separately.
+export async function validateLiveTabIds(): Promise<void> {
+  const store = await loadStore()
+  const candidates: number[] = []
+  for (const f of Object.values(store.folders)) {
+    if (!f.live) continue
+    for (const m of f.live.managedTabs) {
+      if (typeof m.tabId === 'number') candidates.push(m.tabId)
+    }
+  }
+  if (candidates.length === 0) return
+  const dead = new Set<number>()
+  for (const id of candidates) {
+    try {
+      await chrome.tabs.get(id)
+    } catch {
+      dead.add(id)
+    }
+  }
+  if (dead.size === 0) return
+  await updateStore((s) => {
+    for (const f of Object.values(s.folders)) {
+      if (!f.live) continue
+      for (const m of f.live.managedTabs) {
+        if (typeof m.tabId === 'number' && dead.has(m.tabId)) m.tabId = undefined
+      }
+    }
+    for (const id of dead) delete s.tabs[id]
+  })
 }
 
 // Re-exports kept for tests / handlers.
