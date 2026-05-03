@@ -19,9 +19,11 @@ export async function installContextMenus(): Promise<void> {
   chrome.contextMenus.create({
     id: ITEM_SYNC_LIVE,
     title: 'Sync this Live folder',
-    // 'tab' (right-click on a tab in the strip) is supported since Chrome
-    // 92; @types/chrome's ContextType union has not caught up yet.
-    contexts: ['tab' as chrome.contextMenus.ContextType],
+    // Chrome's contextMenus API does not actually accept a 'tab' context at
+    // runtime (despite some docs suggesting it); attaching to 'page' /
+    // 'frame' means the entry shows up when right-clicking the page of a
+    // Live folder PR/issue. Non-live pages just no-op the click.
+    contexts: ['page', 'frame'],
   })
   chrome.contextMenus.create({
     id: ITEM_PIN,
