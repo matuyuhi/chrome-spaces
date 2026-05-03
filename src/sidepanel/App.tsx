@@ -346,6 +346,11 @@ export function App() {
   const claimedTabIds = new Set<number>()
   for (const f of Object.values(store.folders)) {
     for (const it of f.items) if (it.kind === 'tab') claimedTabIds.add(it.tabId)
+    if (f.live) {
+      for (const m of f.live.managedTabs) {
+        if (typeof m.tabId === 'number') claimedTabIds.add(m.tabId)
+      }
+    }
   }
   const orphanTabIds: number[] = []
   for (const id of Object.keys(tabs).map(Number)) {

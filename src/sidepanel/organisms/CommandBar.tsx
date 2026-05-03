@@ -110,7 +110,14 @@ function buildIndex(store: SpaceStore, tabs: Record<number, TabInfo>, windowId: 
       if (!f) continue
       for (const it of f.items) {
         if (it.kind === 'folder') stack.push(it.folderId)
-        else ownerByTab.set(it.tabId, { id: space.id, name: space.name })
+        else if (it.kind === 'tab') ownerByTab.set(it.tabId, { id: space.id, name: space.name })
+      }
+      if (f.live) {
+        for (const m of f.live.managedTabs) {
+          if (typeof m.tabId === 'number') {
+            ownerByTab.set(m.tabId, { id: space.id, name: space.name })
+          }
+        }
       }
     }
   }

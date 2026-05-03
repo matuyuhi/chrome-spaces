@@ -3,9 +3,9 @@ import { syncLiveFolder } from './sync-engine'
 import {
   createFolder,
   createSpace,
+  materializeLiveTab,
   switchTo,
 } from '../space-manager'
-import { onTabCreated } from '../handlers'
 import { setGitHubPat } from '../secret-storage'
 import { loadStore } from '../storage'
 import { setupChromeMock, type ChromeMock } from '../test-utils'
@@ -40,10 +40,11 @@ describe('syncLiveFolder', () => {
     mock = setupChromeMock()
   })
 
-  it('places synced tabs in the live folder, not in the active Space', async () => {
+  it('records synced items as unmaterialized live entries — no Chrome tabs', async () => {
     await setGitHubPat('ghp_test')
     const space = await createSpace({ name: 'Work', color: 'red', windowId: 1 })
     await switchTo(space.id, 1)
+    const tabsBefore = mock.tabs.size
     const live = await createFolder({
       parentFolderId: space.rootFolderId,
       name: 'Reviews',
@@ -53,35 +54,30 @@ describe('syncLiveFolder', () => {
       },
     })
 
-    // Reproduce the chrome.tabs.onCreated → registerTab race that previously
-    // double-claimed each new tab into the active Space's root folder.
-    const original = chrome.tabs.create
-    chrome.tabs.create = (async (props: chrome.tabs.CreateProperties) => {
-      const tab = await original(props)
-      void onTabCreated(tab)
-      return tab
-    }) as typeof chrome.tabs.create
-
     const fakeFetch = vi.fn(async () =>
       searchResponse([{ repo: 'a/b', number: 1 }, { repo: 'a/b', number: 2 }]),
     )
     await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
 
-    chrome.tabs.create = original
-
     const store = await loadStore()
     const liveFolder = store.folders[live.id]!
-    const root = store.folders[space.rootFolderId]!
 
-    expect(liveFolder.items.map((it) => (it.kind === 'tab' ? it.tabId : null))).toEqual(
-      liveFolder.live!.managedTabs.map((m) => m.tabId),
+    // No Chrome tabs are spawned during a sync.
+    expect(mock.tabs.size).toBe(tabsBefore)
+
+    // items are kind:'live' refs keyed by externalId, in the same order
+    // as managedTabs.
+    expect(liveFolder.items.map((it) => (it.kind === 'live' ? it.externalId : null))).toEqual(
+      liveFolder.live!.managedTabs.map((m) => m.externalId),
     )
-    // Each synced tab should appear in the Live folder ONLY, not also in
-    // the Space root.
+    // managedTabs carry url/title; tabId is unset until the user clicks.
     for (const m of liveFolder.live!.managedTabs) {
-      expect(root.items.some((it) => it.kind === 'tab' && it.tabId === m.tabId)).toBe(false)
+      expect(m.tabId).toBeUndefined()
+      expect(m.url).toMatch(/github\.com/)
+      expect(m.title).toBeTruthy()
     }
   })
+
 
   it('records GitHub errors from the API', async () => {
     await setGitHubPat('bad')
@@ -137,7 +133,7 @@ describe('syncLiveFolder', () => {
     expect(secondHeaders['If-None-Match']).toBe('W/"v1"')
   })
 
-  it('removes managed tabs that disappeared from the result set', async () => {
+  it('removes managed entries that disappeared from the result set', async () => {
     await setGitHubPat('ghp_test')
     const space = await createSpace({ name: 'S', color: 'red', windowId: 1 })
     const live = await createFolder({
@@ -161,8 +157,43 @@ describe('syncLiveFolder', () => {
 
     const final = (await loadStore()).folders[live.id]
     expect(final?.live?.managedTabs.map((m) => m.externalId)).toEqual(['a/b#1'])
-    // Mock state: the second tab should be removed.
-    const surviving = [...mock.tabs.values()]
-    expect(surviving).toHaveLength(1)
+    expect(final?.items.map((it) => (it.kind === 'live' ? it.externalId : null))).toEqual(['a/b#1'])
+  })
+
+  it('closes the materialized Chrome tab when an item disappears upstream', async () => {
+    await setGitHubPat('ghp_test')
+    const space = await createSpace({ name: 'M', color: 'red', windowId: 1 })
+    const live = await createFolder({
+      parentFolderId: space.rootFolderId,
+      name: 'Reviews',
+      live: {
+        source: { type: 'github-prs', preset: 'review-requested' },
+        refreshIntervalMin: 0,
+      },
+    })
+
+    let seq = 0
+    const fakeFetch = vi.fn(async () => {
+      seq++
+      return seq === 1
+        ? searchResponse([{ repo: 'a/b', number: 1 }, { repo: 'a/b', number: 2 }])
+        : searchResponse([{ repo: 'a/b', number: 1 }])
+    })
+
+    // First sync: 2 unmaterialized live entries, no Chrome tabs.
+    await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
+    expect(mock.tabs.size).toBe(0)
+
+    // Materialize the second one (the one we're going to drop next sync).
+    const tabId = await materializeLiveTab(live.id, 'a/b#2')
+    expect(tabId).toBeTypeOf('number')
+    expect(mock.tabs.size).toBe(1)
+
+    // Second sync drops 'a/b#2'. The Chrome tab we materialized must be
+    // closed.
+    await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
+    const final = (await loadStore()).folders[live.id]
+    expect(final?.live?.managedTabs.map((m) => m.externalId)).toEqual(['a/b#1'])
+    expect(mock.tabs.has(tabId!)).toBe(false)
   })
 })

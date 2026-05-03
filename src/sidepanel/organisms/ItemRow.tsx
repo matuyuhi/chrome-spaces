@@ -1,5 +1,5 @@
 import { sendMessage } from '../../shared/messaging'
-import { type FolderId, type ItemRef } from '../../shared/types'
+import { type FolderId, type ItemRef, type ManagedTab } from '../../shared/types'
 import { useAppCtx } from '../AppContext'
 import { type DropPos, dropPosKey } from '../dnd'
 import { TabMenu } from './menus'
@@ -38,21 +38,26 @@ export function ItemRow({
     return <FolderView folder={f} depth={depth} />
   }
 
+  if (item.kind === 'live') {
+    const parent = ctx.store.folders[parentFolderId]
+    const managed = parent?.live?.managedTabs.find(
+      (m) => m.externalId === item.externalId,
+    )
+    if (!managed) return null
+    return (
+      <LiveRow
+        managed={managed}
+        parentFolderId={parentFolderId}
+        depth={depth}
+      />
+    )
+  }
+
   const tab = ctx.tabs[item.tabId]
   const tabRecord = ctx.store.tabs[item.tabId]
   const isPinned = !!tabRecord?.baseUrl
   const tabMenuId = `tab:${item.tabId}`
-  // For Live folder tabs, the base URL is the managedTab.url. Otherwise
-  // fall back to a user-pinned baseUrl on TabRecord.
-  const resetTargetUrl = (() => {
-    if (parentIsLive) {
-      for (const f of Object.values(ctx.store.folders)) {
-        const m = f.live?.managedTabs.find((mt) => mt.tabId === item.tabId)
-        if (m) return m.url
-      }
-    }
-    return tabRecord?.baseUrl
-  })()
+  const resetTargetUrl = tabRecord?.baseUrl
   const hasResetTarget = !!resetTargetUrl
 
   const isDragging =
@@ -219,6 +224,91 @@ export function ItemRow({
             }
           }}
         />
+      )}
+    </TabRowBox>
+  )
+}
+
+interface LiveRowProps {
+  managed: ManagedTab
+  parentFolderId: FolderId
+  depth: number
+}
+
+function LiveRow({ managed, parentFolderId, depth }: LiveRowProps) {
+  const ctx = useAppCtx()
+  const tabId = managed.tabId
+  const tab = typeof tabId === 'number' ? ctx.tabs[tabId] : undefined
+  const isMaterialized = !!tab
+  // Show "reset" only when the user has navigated away from the live URL.
+  const showReset =
+    isMaterialized && typeof tab?.url === 'string' && tab.url !== managed.url
+
+  const titleText = tab?.title || managed.title || managed.url
+
+  const click = async () => {
+    try {
+      if (isMaterialized && typeof tabId === 'number') {
+        await sendMessage({ type: 'activateTab', tabId })
+      } else {
+        await sendMessage({
+          type: 'materializeLiveTab',
+          folderId: parentFolderId,
+          externalId: managed.externalId,
+        })
+        await ctx.refresh()
+      }
+    } catch (e) {
+      ctx.onError(e)
+    }
+  }
+
+  return (
+    <TabRowBox
+      isActive={tab?.active}
+      style={{ paddingLeft: depth * 12 }}
+    >
+      <TabMain onClick={click} title={managed.url}>
+        {tab?.favIconUrl ? (
+          <Favicon src={tab.favIconUrl} alt="" />
+        ) : (
+          <FaviconPlaceholder aria-hidden />
+        )}
+        <TabTitle active={tab?.active}>{titleText}</TabTitle>
+      </TabMain>
+      {showReset && typeof tabId === 'number' && (
+        <ResetButton
+          title={`Jump back to ${managed.url}`}
+          onClick={async (e) => {
+            e.stopPropagation()
+            try {
+              await sendMessage({ type: 'resetTab', tabId })
+            } catch (err) {
+              ctx.onError(err)
+            }
+          }}
+          aria-label="Reset to base URL"
+        >
+          <Minus size={14} />
+        </ResetButton>
+      )}
+      {isMaterialized && typeof tabId === 'number' && (
+        <CloseButton
+          className="close-btn"
+          title="Close (returns to link state)"
+          onClick={async (e) => {
+            e.stopPropagation()
+            try {
+              await sendMessage({ type: 'closeTab', tabId })
+              await ctx.refresh()
+            } catch (err) {
+              ctx.onError(err)
+            }
+          }}
+          aria-label="Close tab"
+        >
+          <X size={14} />
+        </CloseButton>
       )}
     </TabRowBox>
   )

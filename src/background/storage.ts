@@ -72,15 +72,72 @@ export async function migrateIfNeeded(): Promise<void> {
   const stored = result[STORAGE_KEY] as { schemaVersion?: number } | undefined
   if (!stored) return
   if (stored.schemaVersion === CURRENT_SCHEMA_VERSION) return
-  if (stored.schemaVersion === undefined || stored.schemaVersion === 1) {
+
+  let current: SpaceStore
+  let version = stored.schemaVersion
+  if (version === undefined || version === 1) {
     console.log('[Spaces] migrating store v1 → v2')
-    const next = await migrateV1ToV2(stored as unknown as V1Store)
-    await saveStore(next)
+    current = await migrateV1ToV2(stored as unknown as V1Store)
+    version = 2
+  } else {
+    current = stored as unknown as SpaceStore
   }
+  if (version === 2) {
+    console.log('[Spaces] migrating store v2 → v3')
+    current = migrateV2ToV3(current)
+    version = 3
+  }
+  if (version === CURRENT_SCHEMA_VERSION) {
+    await saveStore(current)
+  }
+}
+
+// v3 introduces ItemRef.kind = 'live' and makes ManagedTab.tabId
+// optional. For each live folder, replace its items list (which used to
+// be { kind:'tab', tabId } pointing at managedTabs) with kind:'live'
+// refs keyed by externalId. Existing materialized tabIds are preserved
+// on the managedTabs themselves so users don't lose their open tabs.
+function migrateV2ToV3(store: SpaceStore): SpaceStore {
+  for (const folder of Object.values(store.folders)) {
+    if (!folder.live) continue
+    const byTab = new Map<number, string>()
+    for (const m of folder.live.managedTabs) {
+      if (typeof m.tabId === 'number') byTab.set(m.tabId, m.externalId)
+    }
+    const seen = new Set<string>()
+    const items: typeof folder.items = []
+    for (const it of folder.items) {
+      if (it.kind !== 'tab') {
+        items.push(it)
+        continue
+      }
+      const ext = byTab.get(it.tabId)
+      if (ext && !seen.has(ext)) {
+        items.push({ kind: 'live', externalId: ext })
+        seen.add(ext)
+      }
+      // Tab in a live folder but not in managedTabs: drop (defensive).
+    }
+    // Append any managedTabs not yet referenced (e.g. tabId-less entries
+    // that wouldn't match the byTab map).
+    for (const m of folder.live.managedTabs) {
+      if (!seen.has(m.externalId)) {
+        items.push({ kind: 'live', externalId: m.externalId })
+        seen.add(m.externalId)
+      }
+    }
+    folder.items = items
+  }
+  store.schemaVersion = CURRENT_SCHEMA_VERSION
+  return store
 }
 
 async function migrateV1ToV2(old: V1Store): Promise<SpaceStore> {
   const next = emptyStore()
+  // emptyStore() stamps the latest schema version, but this function
+  // intentionally produces v2-shape data (kind:'tab' items inside live
+  // folders); the caller chains through migrateV2ToV3 to finish.
+  next.schemaVersion = 2
   next.activeSpaceByWindow = { ...old.activeSpaceByWindow }
 
   for (const oldSpace of Object.values(old.spaces)) {

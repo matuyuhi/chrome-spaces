@@ -14,6 +14,7 @@ import {
   deleteSpace,
   importChromeTabGroups,
   importStore,
+  materializeLiveTab,
   moveItem,
   pinTab,
   reattachOrphanSpaces,
@@ -28,6 +29,7 @@ import {
   switchTo,
   unpinTab,
   updateLiveFolder,
+  validateLiveTabIds,
 } from './space-manager'
 import { handleAlarm, reconcileAlarms } from './live/alarms'
 import { syncLiveFolder } from './live/sync-engine'
@@ -57,6 +59,7 @@ async function bootstrap(): Promise<void> {
   await migrateIfNeeded()
   await reattachOrphanSpaces()
   await reconcile()
+  await validateLiveTabIds()
   await reconcileAlarms()
   await ensureAutoArchiveAlarm()
   await installContextMenus()
@@ -138,6 +141,8 @@ async function handleMessage(msg: Message): Promise<unknown> {
       })
     case 'syncLiveFolder':
       return syncLiveFolder(msg.folderId)
+    case 'materializeLiveTab':
+      return materializeLiveTab(msg.folderId, msg.externalId)
     case 'moveItem':
       return moveItem({ item: msg.item, toFolderId: msg.toFolderId, toIndex: msg.toIndex })
     case 'pinTab':

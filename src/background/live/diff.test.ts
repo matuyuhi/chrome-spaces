@@ -3,7 +3,7 @@ import { diff } from './diff'
 import { type ManagedTab } from '../../shared/types'
 import { type ItemRef } from './sources/github'
 
-const makeManaged = (externalId: string, tabId: number): ManagedTab => ({
+const makeManaged = (externalId: string, tabId?: number): ManagedTab => ({
   externalId,
   url: `https://github.com/${externalId.replace('#', '/pull/')}`,
   tabId,
