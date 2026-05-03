@@ -10,7 +10,12 @@ import { setGitHubToken } from '../secret-storage'
 import { loadStore } from '../storage'
 import { setupChromeMock, type ChromeMock } from '../test-utils'
 
-function searchResponse(items: { repo: string; number: number }[]): Response {
+function searchResponse(
+  items: { repo: string; number: number }[],
+  etag?: string,
+): Response {
+  const headers: Record<string, string> = {}
+  if (etag) headers.ETag = etag
   return new Response(
     JSON.stringify({
       total_count: items.length,
@@ -24,7 +29,7 @@ function searchResponse(items: { repo: string; number: number }[]): Response {
         updated_at: '2026-01-01T00:00:00Z',
       })),
     }),
-    { status: 200 },
+    { status: 200, headers },
   )
 }
 
@@ -95,6 +100,41 @@ describe('syncLiveFolder', () => {
     await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
     const after = (await loadStore()).folders[live.id]
     expect(after?.live?.lastSyncError).toMatch(/401/)
+  })
+
+  it('persists ETag and short-circuits on 304', async () => {
+    await setGitHubToken('ghp_test')
+    const space = await createSpace({ name: 'E', color: 'red', windowId: 1 })
+    const live = await createFolder({
+      parentFolderId: space.rootFolderId,
+      name: 'Reviews',
+      live: {
+        source: { type: 'github-prs', preset: 'review-requested' },
+        refreshIntervalMin: 0,
+      },
+    })
+
+    const fakeFetch = vi.fn<typeof fetch>()
+    fakeFetch.mockResolvedValueOnce(searchResponse([{ repo: 'a/b', number: 1 }], 'W/"v1"'))
+    fakeFetch.mockResolvedValueOnce(new Response(null, { status: 304 }))
+
+    await syncLiveFolder(live.id, fakeFetch)
+    const afterFirst = (await loadStore()).folders[live.id]
+    expect(afterFirst?.live?.etag).toBe('W/"v1"')
+    expect(afterFirst?.live?.managedTabs).toHaveLength(1)
+    const tabsBefore = mock.tabs.size
+
+    await syncLiveFolder(live.id, fakeFetch)
+    const afterSecond = (await loadStore()).folders[live.id]
+    expect(afterSecond?.live?.etag).toBe('W/"v1"')
+    expect(afterSecond?.live?.managedTabs).toHaveLength(1)
+    expect(afterSecond?.live?.lastSyncError).toBeUndefined()
+    // No tab churn on 304.
+    expect(mock.tabs.size).toBe(tabsBefore)
+    // Second call must include If-None-Match.
+    const secondCall = fakeFetch.mock.calls[1]! as unknown as [string, RequestInit]
+    const secondHeaders = secondCall[1].headers as Record<string, string>
+    expect(secondHeaders['If-None-Match']).toBe('W/"v1"')
   })
 
   it('removes managed tabs that disappeared from the result set', async () => {
