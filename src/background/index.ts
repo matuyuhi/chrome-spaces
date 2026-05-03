@@ -38,10 +38,15 @@ import {
   DEFAULT_GITHUB_API_BASE,
   getGitHubApiBaseUrl,
   getGitHubClientId,
+  getGitHubOauthToken,
+  getGitHubPat,
   getGitHubToken,
+  getPreferredAuth,
   setGitHubApiBaseUrl,
   setGitHubClientId,
-  setGitHubToken,
+  setGitHubOauthToken,
+  setGitHubPat,
+  setPreferredAuth,
 } from './secret-storage'
 import { BUILTIN_GITHUB_CLIENT_ID, pollDeviceFlow, startDeviceFlow } from './oauth'
 import { getUIPrefs, setUIPrefs } from './ui-prefs'
@@ -145,10 +150,32 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return chrome.tabs.remove(msg.tabId)
     case 'activateTab':
       return chrome.tabs.update(msg.tabId, { active: true })
-    case 'getGitHubToken':
-      return { hasToken: !!(await getGitHubToken()) }
-    case 'setGitHubToken':
-      return setGitHubToken(msg.token)
+    case 'getGitHubAuthState': {
+      const [oauth, pat, preferred, active] = await Promise.all([
+        getGitHubOauthToken(),
+        getGitHubPat(),
+        getPreferredAuth(),
+        // Walk getGitHubToken's resolution to learn which slot it picks.
+        (async () => {
+          const tok = await getGitHubToken()
+          if (!tok) return undefined
+          if (tok === (await getGitHubOauthToken())) return 'oauth' as const
+          return 'pat' as const
+        })(),
+      ])
+      return {
+        hasOauth: !!oauth,
+        hasPat: !!pat,
+        preferred,
+        active,
+      }
+    }
+    case 'setGitHubPat':
+      return setGitHubPat(msg.token)
+    case 'clearGitHubOauthToken':
+      return setGitHubOauthToken(undefined)
+    case 'setPreferredAuth':
+      return setPreferredAuth(msg.method)
     case 'getGitHubApiBaseUrl': {
       const url = await getGitHubApiBaseUrl()
       return { url, isCustom: url !== DEFAULT_GITHUB_API_BASE }

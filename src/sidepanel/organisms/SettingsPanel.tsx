@@ -1,7 +1,7 @@
 import styled from '@emotion/styled'
 import { useEffect, useRef, useState } from 'react'
 import { sendMessage, type UIFontSize } from '../../shared/messaging'
-import { type SpaceStore } from '../../shared/types'
+import { type GitHubAuthMethod, type SpaceStore } from '../../shared/types'
 import { applyFontSize, FONT_LABELS, FONT_SCALE, tokens } from '../theme'
 import { LinkButton, PrimaryButton, SecondaryButton } from '../atoms/Button'
 
@@ -132,7 +132,10 @@ const Header = styled.header`
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [token, setToken] = useState('')
-  const [hasToken, setHasToken] = useState<boolean | undefined>(undefined)
+  const [hasOauth, setHasOauth] = useState<boolean | undefined>(undefined)
+  const [hasPat, setHasPat] = useState<boolean | undefined>(undefined)
+  const [preferred, setPreferred] = useState<GitHubAuthMethod | undefined>()
+  const [active, setActive] = useState<GitHubAuthMethod | undefined>()
   const [saved, setSaved] = useState(false)
   const [fontSize, setFontSize] = useState<UIFontSize>(3)
   const [autoArchiveDays, setAutoArchiveDays] = useState(0)
@@ -155,10 +158,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     | { phase: 'error'; message: string }
   >({ phase: 'idle' })
 
+  const refreshAuthState = async () => {
+    const s = await sendMessage({ type: 'getGitHubAuthState' })
+    setHasOauth(s.hasOauth)
+    setHasPat(s.hasPat)
+    setPreferred(s.preferred)
+    setActive(s.active)
+  }
+
   useEffect(() => {
-    void sendMessage({ type: 'getGitHubToken' }).then(({ hasToken }) =>
-      setHasToken(hasToken),
-    )
+    void refreshAuthState()
     void sendMessage({ type: 'getUIPrefs' }).then((prefs) => {
       setFontSize(prefs.fontSize)
       setAutoArchiveDays(prefs.autoArchiveDays)
@@ -176,11 +185,21 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }, [])
 
   const handleSave = async () => {
-    await sendMessage({ type: 'setGitHubToken', token: token || undefined })
-    setHasToken(!!token)
+    await sendMessage({ type: 'setGitHubPat', token: token || undefined })
+    await refreshAuthState()
     setToken('')
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
+  }
+
+  const handleSignOutOauth = async () => {
+    await sendMessage({ type: 'clearGitHubOauthToken' })
+    await refreshAuthState()
+  }
+
+  const handlePreferred = async (method: GitHubAuthMethod) => {
+    await sendMessage({ type: 'setPreferredAuth', method })
+    await refreshAuthState()
   }
 
   const handleSize = async (size: UIFontSize) => {
@@ -295,7 +314,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       }
       if (result.status === 'success') {
         setOauthState({ phase: 'idle' })
-        setHasToken(true)
+        await refreshAuthState()
         setSaved(true)
         setTimeout(() => setSaved(false), 1500)
         return
@@ -425,8 +444,50 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         <p className="muted">
           Live folders need a GitHub credential. Pick whichever option fits —
           OAuth gives revocable, per-app access; a PAT is faster to set up if
-          you already have one.
+          you already have one. You can keep <strong>both</strong> saved and
+          switch which one Live folders use below.
         </p>
+        {hasOauth && hasPat && (
+          <div>
+            <p className="muted" style={{ marginBottom: 4 }}>
+              Live folders currently use:
+            </p>
+            <Actions>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <input
+                  type="radio"
+                  name="preferred-auth"
+                  checked={(preferred ?? active) === 'oauth'}
+                  onChange={() => void handlePreferred('oauth')}
+                />
+                OAuth token
+              </label>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <input
+                  type="radio"
+                  name="preferred-auth"
+                  checked={(preferred ?? active) === 'pat'}
+                  onChange={() => void handlePreferred('pat')}
+                />
+                Personal Access Token
+              </label>
+            </Actions>
+          </div>
+        )}
+        {(hasOauth || hasPat) && (
+          <p className="muted">
+            Active:{' '}
+            {active === 'oauth'
+              ? '✓ OAuth token'
+              : active === 'pat'
+                ? '✓ Personal Access Token'
+                : '— none'}
+          </p>
+        )}
       </Section>
 
       <Section>
@@ -446,13 +507,30 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 ? '✓ using built-in Client ID'
                 : '— no Client ID available'}
         </p>
+        <p className="muted">
+          OAuth token:{' '}
+          {hasOauth === undefined
+            ? '…'
+            : hasOauth
+              ? '✓ saved'
+              : '— not signed in'}
+        </p>
         <Actions>
           <PrimaryButton
             onClick={() => void handleStartOAuth()}
             disabled={!canSignIn || oauthState.phase === 'awaiting'}
           >
-            {oauthState.phase === 'awaiting' ? 'Waiting…' : 'Sign in with GitHub'}
+            {oauthState.phase === 'awaiting'
+              ? 'Waiting…'
+              : hasOauth
+                ? 'Re-authorize'
+                : 'Sign in with GitHub'}
           </PrimaryButton>
+          {hasOauth && (
+            <SecondaryButton onClick={() => void handleSignOutOauth()}>
+              Sign out
+            </SecondaryButton>
+          )}
         </Actions>
         <details>
           <summary
@@ -529,8 +607,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           <code>chrome.storage.local</code> on this device — never synced.
         </p>
         <p className="muted">
-          Status:{' '}
-          {hasToken === undefined ? '…' : hasToken ? '✓ token saved' : '— no token'}
+          PAT: {hasPat === undefined ? '…' : hasPat ? '✓ saved' : '— not set'}
         </p>
         <input
           type="password"
@@ -540,8 +617,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           onChange={(e) => setToken(e.target.value)}
         />
         <Actions>
-          <PrimaryButton onClick={handleSave} disabled={!token && !hasToken}>
-            {token ? 'Save token' : hasToken ? 'Clear token' : 'Save'}
+          <PrimaryButton onClick={handleSave} disabled={!token && !hasPat}>
+            {token ? 'Save PAT' : hasPat ? 'Clear PAT' : 'Save'}
           </PrimaryButton>
           {saved && <span className="muted">Saved.</span>}
         </Actions>

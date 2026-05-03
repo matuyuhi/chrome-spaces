@@ -2,11 +2,17 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   DEFAULT_GITHUB_API_BASE,
   getGitHubApiBaseUrl,
+  getGitHubOauthToken,
+  getGitHubPat,
   getGitHubToken,
+  getPreferredAuth,
   getSecrets,
   normalizeGitHubApiBaseUrl,
   setGitHubApiBaseUrl,
-  setGitHubToken,
+  setGitHubOauthToken,
+  setGitHubPat,
+  setPreferredAuth,
+  setSecrets,
 } from './secret-storage'
 import { setupChromeMock } from './test-utils'
 
@@ -18,26 +24,64 @@ describe('secret-storage', () => {
     expect(await getGitHubToken()).toBeUndefined()
   })
 
-  it('stores and retrieves a GitHub token', async () => {
-    await setGitHubToken('ghp_test')
-    expect(await getGitHubToken()).toBe('ghp_test')
-  })
-
-  it('trims whitespace and treats empty/whitespace as clear', async () => {
-    await setGitHubToken('  ghp_padded  ')
+  it('stores and retrieves a PAT, trims whitespace, treats empty as clear', async () => {
+    await setGitHubPat('  ghp_padded  ')
+    expect(await getGitHubPat()).toBe('ghp_padded')
     expect(await getGitHubToken()).toBe('ghp_padded')
-    await setGitHubToken('   ')
-    expect(await getGitHubToken()).toBeUndefined()
+    await setGitHubPat('   ')
+    expect(await getGitHubPat()).toBeUndefined()
   })
 
-  it('clears the token when undefined is passed', async () => {
-    await setGitHubToken('ghp_test')
-    await setGitHubToken(undefined)
-    expect(await getGitHubToken()).toBeUndefined()
+  it('stores and retrieves an OAuth token', async () => {
+    await setGitHubOauthToken('gho_test')
+    expect(await getGitHubOauthToken()).toBe('gho_test')
+    expect(await getGitHubToken()).toBe('gho_test')
+  })
+
+  it('first OAuth sign-in sets preferredAuth=oauth; first PAT sets preferredAuth=pat', async () => {
+    await setGitHubOauthToken('gho_test')
+    expect(await getPreferredAuth()).toBe('oauth')
+    setupChromeMock() // reset
+    await setGitHubPat('ghp_test')
+    expect(await getPreferredAuth()).toBe('pat')
+  })
+
+  it('keeps both saved and getGitHubToken obeys preferredAuth', async () => {
+    await setGitHubOauthToken('gho_x')
+    await setGitHubPat('ghp_y')
+    await setPreferredAuth('pat')
+    expect(await getGitHubToken()).toBe('ghp_y')
+    await setPreferredAuth('oauth')
+    expect(await getGitHubToken()).toBe('gho_x')
+  })
+
+  it('clearing the preferred slot rolls preferredAuth to the surviving slot', async () => {
+    await setGitHubOauthToken('gho_x')
+    await setGitHubPat('ghp_y')
+    await setPreferredAuth('oauth')
+    await setGitHubOauthToken(undefined)
+    expect(await getPreferredAuth()).toBe('pat')
+    expect(await getGitHubToken()).toBe('ghp_y')
+  })
+
+  it('treats a legacy single-slot githubToken as a PAT for fallback', async () => {
+    // Simulate an older install that wrote to githubToken before the
+    // split. getGitHubToken should still return it via the PAT fallback.
+    await setSecrets({ githubToken: 'legacy_pat' })
+    expect(await getGitHubToken()).toBe('legacy_pat')
+    expect(await getGitHubPat()).toBe('legacy_pat')
+  })
+
+  it('saving a PAT retires the legacy single-slot value', async () => {
+    await setSecrets({ githubToken: 'legacy_pat' })
+    await setGitHubPat('ghp_new')
+    const s = await getSecrets()
+    expect(s.githubToken).toBeUndefined()
+    expect(s.githubPat).toBe('ghp_new')
   })
 
   it('keeps secrets out of chrome.storage.sync', async () => {
-    await setGitHubToken('ghp_test')
+    await setGitHubPat('ghp_test')
     const synced = await chrome.storage.sync.get(null)
     expect(synced).toEqual({})
   })
