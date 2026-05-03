@@ -13,9 +13,12 @@ export function spaceIdFromAlarm(name: string): SpaceId | undefined {
 }
 
 export async function scheduleSync(spaceId: SpaceId, intervalMin: number): Promise<void> {
-  await chrome.alarms.create(alarmName(spaceId), {
-    periodInMinutes: Math.max(1, intervalMin),
-  })
+  // 0 (or anything <1) means "manual only" — clear any existing alarm.
+  if (intervalMin < 1) {
+    await chrome.alarms.clear(alarmName(spaceId))
+    return
+  }
+  await chrome.alarms.create(alarmName(spaceId), { periodInMinutes: intervalMin })
 }
 
 export async function unscheduleSync(spaceId: SpaceId): Promise<void> {
@@ -29,6 +32,7 @@ export async function reconcileAlarms(): Promise<void> {
   const store = await loadStore()
   for (const sp of Object.values(store.spaces)) {
     if (!isLive(sp)) continue
+    if (sp.refreshIntervalMin < 1) continue // manual-only — no alarm
     desired.set(alarmName(sp.id), sp.refreshIntervalMin)
   }
 
@@ -40,7 +44,7 @@ export async function reconcileAlarms(): Promise<void> {
   for (const [name, interval] of desired) {
     const existing = all.find((a) => a.name === name)
     if (!existing || (existing.periodInMinutes ?? 0) !== interval) {
-      await chrome.alarms.create(name, { periodInMinutes: Math.max(1, interval) })
+      await chrome.alarms.create(name, { periodInMinutes: interval })
     }
   }
 }

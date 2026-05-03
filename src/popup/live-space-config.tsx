@@ -135,7 +135,7 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
       ? initial.source.query
       : defaultCustomQueryFor(initialPreset),
   )
-  const [interval, setIntervalMin] = useState(initial?.refreshIntervalMin ?? 5)
+  const [interval, setIntervalMin] = useState(initial?.refreshIntervalMin ?? 0)
   const [submitting, setSubmitting] = useState(false)
   const isEdit = mode === 'edit'
   const isCustom = preset === 'pr-custom' || preset === 'issue-custom'
@@ -261,13 +261,13 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
       )}
 
       <label className="field">
-        <span>Refresh interval (minutes)</span>
+        <span>Refresh interval (minutes; 0 = manual only)</span>
         <input
           type="number"
-          min={1}
+          min={0}
           max={60}
           value={interval}
-          onChange={(e) => setIntervalMin(Math.max(1, Math.min(60, Number(e.target.value) || 5)))}
+          onChange={(e) => setIntervalMin(Math.max(0, Math.min(60, Number(e.target.value) || 0)))}
         />
       </label>
 

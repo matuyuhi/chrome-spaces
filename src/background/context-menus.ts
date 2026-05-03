@@ -1,13 +1,28 @@
-import { pinTab, resetTabToBase, unpinTab } from './space-manager'
+import {
+  findSpaceByGroupId,
+  pinTab,
+  resetTabToBase,
+  unpinTab,
+} from './space-manager'
+import { syncLiveSpace } from './live/sync-engine'
+import { isLive, TAB_GROUP_ID_NONE } from '../shared/types'
 
 const ITEM_PIN = 'spaces:pin-tab'
 const ITEM_UNPIN = 'spaces:unpin-tab'
 const ITEM_RESET = 'spaces:reset-tab'
+const ITEM_SYNC_LIVE = 'spaces:sync-live'
 
 export async function installContextMenus(): Promise<void> {
   // Re-create from scratch every install/startup so that label or order
   // changes ship without leaving stale entries behind.
   await chrome.contextMenus.removeAll()
+  chrome.contextMenus.create({
+    id: ITEM_SYNC_LIVE,
+    title: 'Sync this Live folder',
+    // 'tab' (right-click on a tab in the strip) is supported since Chrome
+    // 92; @types/chrome's ContextType union has not caught up yet.
+    contexts: ['tab' as chrome.contextMenus.ContextType],
+  })
   chrome.contextMenus.create({
     id: ITEM_PIN,
     title: 'Pin tab to current URL',
@@ -43,7 +58,14 @@ export async function handleContextMenuClick(
     case ITEM_RESET:
       await resetTabToBase(tab.id)
       return
+    case ITEM_SYNC_LIVE: {
+      if (typeof tab.groupId !== 'number' || tab.groupId === TAB_GROUP_ID_NONE) return
+      const space = await findSpaceByGroupId(tab.groupId, tab.windowId)
+      if (!space || !isLive(space)) return
+      await syncLiveSpace(space.id)
+      return
+    }
   }
 }
 
-export const _ITEM_IDS = { ITEM_PIN, ITEM_UNPIN, ITEM_RESET }
+export const _ITEM_IDS = { ITEM_PIN, ITEM_UNPIN, ITEM_RESET, ITEM_SYNC_LIVE }

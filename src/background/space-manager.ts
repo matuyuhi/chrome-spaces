@@ -154,7 +154,7 @@ export async function createLiveSpace(input: CreateLiveSpaceInput): Promise<Live
     createdAt: ts,
     lastAccessedAt: ts,
     source: input.source,
-    refreshIntervalMin: input.refreshIntervalMin ?? 5,
+    refreshIntervalMin: input.refreshIntervalMin ?? 0,
     managedTabs: [],
     starterTabId: tab.id,
   }

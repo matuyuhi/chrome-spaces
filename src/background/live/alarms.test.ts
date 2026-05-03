@@ -27,9 +27,21 @@ describe('alarms', () => {
       color: 'red',
       windowId: 1,
       source: { type: 'github-prs', preset: 'assigned' },
+      refreshIntervalMin: 5,
     })
     expect(mock.alarms.has(alarmName(space.id))).toBe(true)
     await deleteSpace(space.id, { closeTabs: false })
+    expect(mock.alarms.has(alarmName(space.id))).toBe(false)
+  })
+
+  it('refreshIntervalMin = 0 means manual-only — no alarm scheduled', async () => {
+    const space = await createLiveSpace({
+      name: 'Manual',
+      color: 'green',
+      windowId: 1,
+      source: { type: 'github-prs', preset: 'review-requested' },
+      // omit refreshIntervalMin → defaults to 0
+    })
     expect(mock.alarms.has(alarmName(space.id))).toBe(false)
   })
 
