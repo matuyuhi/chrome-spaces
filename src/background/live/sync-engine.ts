@@ -65,6 +65,16 @@ async function applyDiff(space: LiveSpace, items: ItemRef[]): Promise<void> {
       })
       if (typeof tab.id !== 'number') continue
       await chrome.tabs.group({ tabIds: [tab.id], groupId: space.groupId })
+      // Live folders can fan out to dozens of PRs/issues at once. Pre-loading
+      // every one of them spikes memory and chews through GitHub session
+      // state for no benefit — most tabs are never opened. Discard cancels
+      // the in-flight load and leaves the tab in the strip; Chrome
+      // re-fetches on the next user activation.
+      try {
+        await chrome.tabs.discard(tab.id)
+      } catch {
+        /* a freshly-created tab can briefly refuse discard; ignore */
+      }
       created.push({
         externalId: item.externalId,
         url: item.url,
