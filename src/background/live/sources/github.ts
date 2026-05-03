@@ -75,10 +75,13 @@ export function buildQuery(source: LiveSource): string {
 function appendRepoFilter(base: string, repoFilter: string | undefined): string {
   const trimmed = repoFilter?.trim()
   if (!trimmed || trimmed === '*') return base
+  // GitHub search uses `-` for negation. Accept `!` as a friendlier shorthand.
+  const negated = trimmed.startsWith('!') || trimmed.startsWith('-')
+  const value = negated ? trimmed.slice(1).trim() : trimmed
+  if (!value) return base
   // Already a qualifier (org:foo, user:foo, repo:foo/bar) — use verbatim.
-  if (trimmed.includes(':')) return `${base} ${trimmed}`
-  // Bare identifier — assume org.
-  return `${base} org:${trimmed}`
+  const qualifier = value.includes(':') ? value : `org:${value}`
+  return `${base} ${negated ? '-' : ''}${qualifier}`
 }
 
 export function parseItem(item: SearchIssueItem): ItemRef {

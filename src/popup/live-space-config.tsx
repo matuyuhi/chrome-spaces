@@ -240,11 +240,11 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
 
       {!isCustom && (
         <label className="field">
-          <span>Filter (optional: empty/* = all repos)</span>
+          <span>Filter (optional: empty/* = all repos, prefix ! to exclude)</span>
           <input
             value={repoFilter}
             onChange={(e) => setRepoFilter(e.target.value)}
-            placeholder="acme  →  org:acme   (or org:foo, user:bar, repo:a/b)"
+            placeholder="acme   !sb   org:foo   user:bar   repo:a/b"
           />
         </label>
       )}

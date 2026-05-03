@@ -60,6 +60,29 @@ describe('buildQuery', () => {
     )
   })
 
+  it('negates with ! or - prefix', () => {
+    expect(buildQuery({ type: 'github-prs', preset: 'assigned', repoFilter: '!sb' })).toBe(
+      'is:pr is:open assignee:@me -org:sb',
+    )
+    expect(
+      buildQuery({ type: 'github-prs', preset: 'assigned', repoFilter: '-org:sb' }),
+    ).toBe('is:pr is:open assignee:@me -org:sb')
+    expect(
+      buildQuery({
+        type: 'github-issues',
+        preset: 'mentioned',
+        repoFilter: '!user:bot',
+      }),
+    ).toBe('is:issue is:open mentions:@me -user:bot')
+    expect(
+      buildQuery({
+        type: 'github-prs',
+        preset: 'authored',
+        repoFilter: '!repo:foo/bar',
+      }),
+    ).toBe('is:pr is:open author:@me -repo:foo/bar')
+  })
+
   it('does not touch a custom preset (its query is verbatim)', () => {
     // Custom preset has no repoFilter field by design; the user just
     // writes the full query. Confirm the union narrows correctly.
