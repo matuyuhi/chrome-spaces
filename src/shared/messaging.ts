@@ -60,6 +60,10 @@ export type Message =
   | { type: 'setGitHubToken'; token?: string }
   | { type: 'getGitHubApiBaseUrl' }
   | { type: 'setGitHubApiBaseUrl'; url?: string }
+  | { type: 'getGitHubClientId' }
+  | { type: 'setGitHubClientId'; clientId?: string }
+  | { type: 'startGitHubOAuth' }
+  | { type: 'pollGitHubOAuth'; deviceCode: string }
   | { type: 'getUIPrefs' }
   | { type: 'setUIPrefs'; prefs: Partial<UIPreferences> }
   | { type: 'importStore'; store: SpaceStore; currentWindowId: number }
@@ -92,6 +96,21 @@ export interface MessageResponseMap {
   setGitHubToken: void
   getGitHubApiBaseUrl: { url: string; isCustom: boolean }
   setGitHubApiBaseUrl: void
+  getGitHubClientId: { hasClientId: boolean }
+  setGitHubClientId: void
+  startGitHubOAuth: {
+    deviceCode: string
+    userCode: string
+    verificationUri: string
+    expiresIn: number
+    interval: number
+  }
+  pollGitHubOAuth:
+    | { status: 'pending' }
+    | { status: 'slow_down'; interval: number }
+    | { status: 'expired' }
+    | { status: 'denied' }
+    | { status: 'success' }
   getUIPrefs: UIPreferences
   setUIPrefs: void
   importStore: void

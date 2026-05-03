@@ -37,10 +37,13 @@ import { loadStore, migrateIfNeeded } from './storage'
 import {
   DEFAULT_GITHUB_API_BASE,
   getGitHubApiBaseUrl,
+  getGitHubClientId,
   getGitHubToken,
   setGitHubApiBaseUrl,
+  setGitHubClientId,
   setGitHubToken,
 } from './secret-storage'
+import { pollDeviceFlow, startDeviceFlow } from './oauth'
 import { getUIPrefs, setUIPrefs } from './ui-prefs'
 import { type Message, type MessageResponse } from '../shared/messaging'
 
@@ -150,6 +153,14 @@ async function handleMessage(msg: Message): Promise<unknown> {
     }
     case 'setGitHubApiBaseUrl':
       return setGitHubApiBaseUrl(msg.url)
+    case 'getGitHubClientId':
+      return { hasClientId: !!(await getGitHubClientId()) }
+    case 'setGitHubClientId':
+      return setGitHubClientId(msg.clientId)
+    case 'startGitHubOAuth':
+      return startDeviceFlow()
+    case 'pollGitHubOAuth':
+      return pollDeviceFlow(msg.deviceCode)
     case 'getUIPrefs':
       return getUIPrefs()
     case 'setUIPrefs':

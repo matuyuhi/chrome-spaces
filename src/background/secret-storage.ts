@@ -53,3 +53,15 @@ export async function setGitHubApiBaseUrl(raw: string | undefined): Promise<void
   else delete secrets.githubApiBaseUrl
   await setSecrets(secrets)
 }
+
+export async function getGitHubClientId(): Promise<string | undefined> {
+  return (await getSecrets()).githubClientId
+}
+
+export async function setGitHubClientId(id: string | undefined): Promise<void> {
+  const secrets = await getSecrets()
+  const trimmed = id?.trim()
+  if (trimmed) secrets.githubClientId = trimmed
+  else delete secrets.githubClientId
+  await setSecrets(secrets)
+}
