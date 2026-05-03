@@ -45,6 +45,7 @@ import {
 } from './secret-storage'
 import { pollDeviceFlow, startDeviceFlow } from './oauth'
 import { getUIPrefs, setUIPrefs } from './ui-prefs'
+import { ensureAutoArchiveAlarm } from './auto-archive'
 import { type Message, type MessageResponse } from '../shared/messaging'
 
 async function bootstrap(): Promise<void> {
@@ -52,6 +53,7 @@ async function bootstrap(): Promise<void> {
   await reattachOrphanSpaces()
   await reconcile()
   await reconcileAlarms()
+  await ensureAutoArchiveAlarm()
   await installContextMenus()
 }
 
@@ -163,8 +165,15 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return pollDeviceFlow(msg.deviceCode)
     case 'getUIPrefs':
       return getUIPrefs()
-    case 'setUIPrefs':
-      return setUIPrefs(msg.prefs)
+    case 'setUIPrefs': {
+      const before = await getUIPrefs()
+      await setUIPrefs(msg.prefs)
+      const after = await getUIPrefs()
+      if (before.autoArchiveDays !== after.autoArchiveDays) {
+        await ensureAutoArchiveAlarm()
+      }
+      return undefined
+    }
     case 'openCommandBar':
       // Background → side panel broadcast; the side panel handles it.
       return undefined

@@ -124,10 +124,14 @@ export type UIFontSize = 1 | 2 | 3 | 4 | 5
 export interface UIPreferences {
   // 1 = XS, 3 = M (default), 5 = XL.
   fontSize: UIFontSize
+  // Move tabs untouched for this many days into the per-Space "Archive"
+  // folder. 0 = disabled. Live folder tabs are never archived.
+  autoArchiveDays: number
 }
 
 export const DEFAULT_UI_PREFS: UIPreferences = {
   fontSize: 3,
+  autoArchiveDays: 0,
 }
 
 export type MessageResponse =

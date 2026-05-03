@@ -65,6 +65,8 @@ export interface TabRecord {
   windowId: number
   // Optional snap-back URL (Arc's pinned tab base URL).
   baseUrl?: string
+  // Last time this tab was activated. Drives the auto-archive job.
+  lastActiveAt?: number
 }
 
 export interface Folder {

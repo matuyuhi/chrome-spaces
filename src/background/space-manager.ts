@@ -399,7 +399,14 @@ export async function registerTab(tab: chrome.tabs.Tab): Promise<void> {
   const tabId = tab.id
   const windowId = tab.windowId
   await updateStore((s) => {
-    s.tabs[tabId] = { ...s.tabs[tabId], tabId, windowId }
+    s.tabs[tabId] = {
+      ...s.tabs[tabId],
+      tabId,
+      windowId,
+      // Treat creation as activity so a brand-new tab isn't immediately
+      // a candidate for archival.
+      lastActiveAt: s.tabs[tabId]?.lastActiveAt ?? now(),
+    }
     // Append to the active Space's root folder if not already tracked.
     const activeId = s.activeSpaceByWindow[windowId]
     if (!activeId) return
@@ -432,14 +439,22 @@ export async function dropTab(tabId: number): Promise<void> {
 export async function setLastActiveTab(windowId: number, tabId: number): Promise<void> {
   const store = await loadStore()
   const activeId = store.activeSpaceByWindow[windowId]
-  if (!activeId) return
-  const sp = store.spaces[activeId]
-  if (!sp || sp.lastActiveTabId === tabId) return
+  // Even if the Space pointer doesn't change, refresh the per-tab
+  // lastActiveAt timestamp so auto-archive sees recent activity.
+  const tabRec = store.tabs[tabId]
+  const sp = activeId ? store.spaces[activeId] : undefined
+  if ((!sp || sp.lastActiveTabId === tabId) && tabRec?.lastActiveAt) {
+    // Skip storage write if the value is fresh (within the last minute)
+    // so rapid tab cycling doesn't burn storage write quota.
+    if (now() - tabRec.lastActiveAt < 60_000) return
+  }
   await updateStore((s) => {
     const id = s.activeSpaceByWindow[windowId]
-    if (!id) return
-    const space = s.spaces[id]
-    if (space) space.lastActiveTabId = tabId
+    if (id) {
+      const space = s.spaces[id]
+      if (space) space.lastActiveTabId = tabId
+    }
+    if (s.tabs[tabId]) s.tabs[tabId].lastActiveAt = now()
   })
 }
 
