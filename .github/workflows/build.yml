@@ -1,0 +1,44 @@
+name: Build Extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build (branch / tag / sha). Empty = current.
+        required: false
+        default: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Package extension zip
+        id: pkg
+        run: |
+          version=$(node -p "require('./package.json').version")
+          short_sha=$(git rev-parse --short HEAD)
+          zip_name="chrome-spaces-${version}-${short_sha}.zip"
+          (cd dist && zip -r "../${zip_name}" .)
+          echo "zip=${zip_name}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ steps.pkg.outputs.zip }}
+          path: ${{ steps.pkg.outputs.zip }}
+          if-no-files-found: error
+          retention-days: 30
