@@ -7,7 +7,12 @@ import {
 } from '../../shared/types'
 import { loadStore, updateStore } from '../storage'
 import { getGitHubToken } from '../secret-storage'
-import { fetchSearchResults, GitHubError, type ItemRef } from './sources/github'
+import {
+  fetchSearchResults,
+  GitHubError,
+  type ItemRef,
+  type SearchResult,
+} from './sources/github'
 import { diff } from './diff'
 
 const now = (): number => Date.now()
@@ -49,13 +54,25 @@ export async function syncLiveFolder(
   }
 
   try {
-    const items = await fetchItems(folder, fetchImpl)
-    await applyDiff(folder, items, windowId)
+    const result = await fetchItems(folder, fetchImpl)
+    if (result.notModified) {
+      await updateStore((s) => {
+        const f = s.folders[folderId]
+        if (f && f.live) {
+          f.live.lastSyncAt = now()
+          f.live.lastSyncError = undefined
+          // etag stays the same; nothing else to do.
+        }
+      })
+      return
+    }
+    await applyDiff(folder, result.items, windowId)
     await updateStore((s) => {
       const f = s.folders[folderId]
       if (f && f.live) {
         f.live.lastSyncAt = now()
         f.live.lastSyncError = undefined
+        f.live.etag = result.etag
       }
     })
   } catch (err) {
@@ -86,15 +103,18 @@ function reachableFolders(store: SpaceStore, rootFolderId: FolderId): Set<Folder
   return seen
 }
 
-async function fetchItems(folder: Folder, fetchImpl: typeof fetch): Promise<ItemRef[]> {
-  if (!folder.live) return []
+async function fetchItems(folder: Folder, fetchImpl: typeof fetch): Promise<SearchResult> {
+  if (!folder.live) return { notModified: false, items: [] }
   if (folder.live.source.type === 'github-prs' || folder.live.source.type === 'github-issues') {
     const token = await getGitHubToken()
     if (!token)
       throw new Error(
         'GitHub token not configured. Open Spaces side panel → Settings → paste a PAT.',
       )
-    return fetchSearchResults(folder.live.source, token, fetchImpl)
+    return fetchSearchResults(folder.live.source, token, {
+      etag: folder.live.etag,
+      fetch: fetchImpl,
+    })
   }
   throw new Error(
     `Unsupported live source: ${(folder.live.source as { type: string }).type}`,

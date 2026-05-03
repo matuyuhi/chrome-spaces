@@ -100,21 +100,36 @@ export function parseItem(item: SearchIssueItem): ItemRef {
   }
 }
 
+export type SearchResult =
+  | { notModified: false; items: ItemRef[]; etag?: string }
+  | { notModified: true; etag: string }
+
+export interface FetchOptions {
+  etag?: string
+  fetch?: typeof fetch
+}
+
 export async function fetchSearchResults(
   source: LiveSource,
   token: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<ItemRef[]> {
+  options: FetchOptions = {},
+): Promise<SearchResult> {
+  const fetchImpl = options.fetch ?? fetch
   const query = buildQuery(source)
   const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&sort=updated&order=desc&per_page=50`
 
-  const res = await fetchImpl(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-  })
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  }
+  if (options.etag) headers['If-None-Match'] = options.etag
+
+  const res = await fetchImpl(url, { headers })
+
+  if (res.status === 304) {
+    return { notModified: true, etag: options.etag! }
+  }
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
@@ -122,5 +137,6 @@ export async function fetchSearchResults(
   }
 
   const data = (await res.json()) as SearchResponse
-  return data.items.map(parseItem)
+  const etag = res.headers.get('ETag') ?? undefined
+  return { notModified: false, items: data.items.map(parseItem), etag }
 }

@@ -188,28 +188,49 @@ describe('fetchSearchResults', () => {
             },
           ],
         }),
-        { status: 200 },
+        { status: 200, headers: { ETag: 'W/"abc123"' } },
       ),
     )
     const result = await fetchSearchResults(
       { type: 'github-prs', preset: 'review-requested' },
       'ghp_test',
-      fetchSpy,
+      { fetch: fetchSpy },
     )
-    expect(result).toHaveLength(1)
-    expect(result[0]?.externalId).toBe('x/y#9')
+    expect(result.notModified).toBe(false)
+    if (result.notModified) throw new Error('expected fresh result')
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]?.externalId).toBe('x/y#9')
+    expect(result.etag).toBe('W/"abc123"')
     expect(fetchSpy).toHaveBeenCalledOnce()
     const call = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
     expect(call[0]).toContain('api.github.com/search/issues')
     expect(call[0]).toContain(encodeURIComponent('is:pr is:open review-requested:@me'))
     const headers = call[1].headers as Record<string, string>
     expect(headers.Authorization).toBe('Bearer ghp_test')
+    expect(headers['If-None-Match']).toBeUndefined()
+  })
+
+  it('sends If-None-Match when an etag is supplied and reports notModified on 304', async () => {
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 304 }))
+    const result = await fetchSearchResults(
+      { type: 'github-prs', preset: 'authored' },
+      'ghp_test',
+      { etag: 'W/"abc123"', fetch: fetchSpy },
+    )
+    expect(result).toEqual({ notModified: true, etag: 'W/"abc123"' })
+    const headers = (fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1]
+      .headers as Record<string, string>
+    expect(headers['If-None-Match']).toBe('W/"abc123"')
   })
 
   it('throws GitHubError on non-OK responses', async () => {
     const fetchSpy = vi.fn(async () => new Response('bad token', { status: 401 }))
     await expect(
-      fetchSearchResults({ type: 'github-prs', preset: 'assigned' }, 'bad', fetchSpy),
+      fetchSearchResults(
+        { type: 'github-prs', preset: 'assigned' },
+        'bad',
+        { fetch: fetchSpy },
+      ),
     ).rejects.toBeInstanceOf(GitHubError)
   })
 })

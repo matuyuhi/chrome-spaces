@@ -45,6 +45,8 @@ export interface LiveConfig {
   starterTabId?: number
   lastSyncAt?: number
   lastSyncError?: string
+  // Saved across syncs so we can send `If-None-Match` and skip work on 304.
+  etag?: string
 }
 
 // An item inside a Folder: either a tracked tab (by tabId) or a nested
