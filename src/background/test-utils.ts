@@ -133,16 +133,6 @@ export function setupChromeMock(): ChromeMock {
       const list = Array.isArray(ids) ? ids : [ids]
       for (const id of list) tabs.delete(id)
     }),
-    discard: vi.fn(async (id: number) => {
-      const t = tabs.get(id)
-      if (!t) throw new Error(`No tab ${id}`)
-      ;(t as FakeTab & { discarded?: boolean }).discarded = true
-      return t as unknown as chrome.tabs.Tab
-    }),
-    onUpdated: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-    },
   }
 
   const tabGroupsApi = {

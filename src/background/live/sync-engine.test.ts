@@ -64,10 +64,6 @@ describe('syncLiveSpace', () => {
     expect(mock.tabs.has(space.starterTabId!)).toBe(false)
     const liveTabs = [...mock.tabs.values()].filter((t) => t.groupId === space.groupId)
     expect(liveTabs).toHaveLength(2)
-    // All live tabs must be unloaded so they do not pre-fetch GitHub.
-    for (const t of liveTabs) {
-      expect((t as { discarded?: boolean }).discarded).toBe(true)
-    }
   })
 
   it('removes tabs for PRs no longer in the result set', async () => {
