@@ -107,6 +107,17 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [baseUrl, setBaseUrl] = useState('')
   const [baseUrlIsCustom, setBaseUrlIsCustom] = useState(false)
   const [baseUrlStatus, setBaseUrlStatus] = useState<string | undefined>()
+  const [clientId, setClientId] = useState('')
+  const [hasClientId, setHasClientId] = useState<boolean | undefined>(undefined)
+  const [oauthState, setOauthState] = useState<
+    | { phase: 'idle' }
+    | {
+        phase: 'awaiting'
+        userCode: string
+        verificationUri: string
+      }
+    | { phase: 'error'; message: string }
+  >({ phase: 'idle' })
 
   useEffect(() => {
     void sendMessage({ type: 'getGitHubToken' }).then(({ hasToken }) =>
@@ -119,6 +130,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       setBaseUrl(isCustom ? url : '')
       setBaseUrlIsCustom(isCustom)
     })
+    void sendMessage({ type: 'getGitHubClientId' }).then(({ hasClientId }) =>
+      setHasClientId(hasClientId),
+    )
   }, [])
 
   const handleSave = async () => {
@@ -184,6 +198,67 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     } catch (e) {
       setBaseUrlStatus(e instanceof Error ? e.message : String(e))
     }
+  }
+
+  const handleSaveClientId = async () => {
+    await sendMessage({
+      type: 'setGitHubClientId',
+      clientId: clientId.trim() || undefined,
+    })
+    setHasClientId(!!clientId.trim())
+    setClientId('')
+  }
+
+  const handleStartOAuth = async () => {
+    setOauthState({ phase: 'idle' })
+    let device
+    try {
+      device = await sendMessage({ type: 'startGitHubOAuth' })
+    } catch (e) {
+      setOauthState({ phase: 'error', message: e instanceof Error ? e.message : String(e) })
+      return
+    }
+    setOauthState({
+      phase: 'awaiting',
+      userCode: device.userCode,
+      verificationUri: device.verificationUri,
+    })
+    void chrome.tabs.create({ url: device.verificationUri })
+    const start = Date.now()
+    let interval = device.interval
+    while (Date.now() - start < device.expiresIn * 1000) {
+      await new Promise((r) => setTimeout(r, interval * 1000))
+      let result
+      try {
+        result = await sendMessage({
+          type: 'pollGitHubOAuth',
+          deviceCode: device.deviceCode,
+        })
+      } catch (e) {
+        setOauthState({ phase: 'error', message: e instanceof Error ? e.message : String(e) })
+        return
+      }
+      if (result.status === 'success') {
+        setOauthState({ phase: 'idle' })
+        setHasToken(true)
+        setSaved(true)
+        setTimeout(() => setSaved(false), 1500)
+        return
+      }
+      if (result.status === 'denied') {
+        setOauthState({ phase: 'error', message: 'Authorization denied.' })
+        return
+      }
+      if (result.status === 'expired') {
+        setOauthState({
+          phase: 'error',
+          message: 'Code expired before approval — please try again.',
+        })
+        return
+      }
+      if (result.status === 'slow_down') interval = result.interval
+    }
+    setOauthState({ phase: 'error', message: 'Timed out waiting for approval.' })
   }
 
   const handleImportFile = async (file: File) => {
@@ -270,10 +345,69 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       </Section>
 
       <Section>
+        <h2>GitHub OAuth (Device Flow)</h2>
+        <p className="muted">
+          Sign in via a GitHub OAuth App you control. Create one at{' '}
+          <a
+            href="https://github.com/settings/applications/new"
+            target="_blank"
+            rel="noreferrer"
+          >
+            github.com/settings/applications/new
+          </a>{' '}
+          (any name and homepage URL work), then enable{' '}
+          <strong>Device Flow</strong> on the app's settings page and paste the{' '}
+          <code>Client ID</code> here. No client secret is needed.
+        </p>
+        <p className="muted">
+          Status:{' '}
+          {hasClientId === undefined
+            ? '…'
+            : hasClientId
+              ? '✓ client_id saved'
+              : '— client_id not set'}
+        </p>
+        <input
+          type="text"
+          autoComplete="off"
+          placeholder="Iv1.xxxxxxxxxxxx"
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+        />
+        <Actions>
+          <SecondaryButton onClick={() => void handleSaveClientId()}>
+            {clientId.trim() ? 'Save client_id' : hasClientId ? 'Clear' : 'Save'}
+          </SecondaryButton>
+          <PrimaryButton
+            onClick={() => void handleStartOAuth()}
+            disabled={!hasClientId || oauthState.phase === 'awaiting'}
+          >
+            {oauthState.phase === 'awaiting' ? 'Waiting…' : 'Sign in with GitHub'}
+          </PrimaryButton>
+        </Actions>
+        {oauthState.phase === 'awaiting' && (
+          <p className="muted">
+            Enter <code>{oauthState.userCode}</code> at{' '}
+            <a href={oauthState.verificationUri} target="_blank" rel="noreferrer">
+              {oauthState.verificationUri}
+            </a>{' '}
+            (a tab was opened for you). Keep this side panel open until the flow
+            completes.
+          </p>
+        )}
+        {oauthState.phase === 'error' && (
+          <p className="muted" style={{ color: 'tomato' }}>
+            {oauthState.message}
+          </p>
+        )}
+      </Section>
+
+      <Section>
         <h2>GitHub PAT</h2>
         <p className="muted">
-          Used by Live Folders. Stored only in <code>chrome.storage.local</code> on
-          this device.
+          Alternative to OAuth — paste a Personal Access Token. Used by Live
+          Folders. Stored only in <code>chrome.storage.local</code> on this
+          device.
         </p>
         <p className="muted">
           Status:{' '}

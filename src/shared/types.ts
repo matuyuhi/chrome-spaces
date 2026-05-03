@@ -106,6 +106,10 @@ export interface SecretStore {
   // Override for GitHub Enterprise Server (e.g., https://ghe.example.com/api/v3).
   // Undefined means use the public github.com API.
   githubApiBaseUrl?: string
+  // OAuth App client_id used for the Device Flow login. The user creates
+  // their own OAuth App (Settings → Developer settings → OAuth Apps,
+  // "Enable Device Flow" must be on) and pastes the client_id here.
+  githubClientId?: string
 }
 
 export function emptyStore(): SpaceStore {
