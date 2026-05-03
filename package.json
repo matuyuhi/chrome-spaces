@@ -1,6 +1,6 @@
 {
   "name": "spaces",
-  "version": "0.2.1",
+  "version": "1.0.0",
   "private": true,
   "description": "Arc-like Chrome extension: Tab Group based Spaces with GitHub PR live folders",
   "type": "module",
