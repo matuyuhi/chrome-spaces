@@ -20,7 +20,7 @@ export function SpaceContent({ space }: { space: Space }) {
     <div className="space-body">
       <div className="space-header">
         <span
-          className="dot-large"
+          className="dot-small"
           style={{ background: COLOR_HEX[space.color] }}
         />
         {editingName ? (

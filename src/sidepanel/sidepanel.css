@@ -62,8 +62,8 @@ button {
 .root {
   display: flex;
   flex-direction: column;
-  padding: 10px;
-  gap: 8px;
+  padding: 8px;
+  gap: 6px;
 }
 
 /* ---- Header --------------------------------------------------------- */
@@ -72,16 +72,17 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+  min-height: 24px;
 }
 
 .header h1 {
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.04em;
   margin: 0;
   flex: 1;
-  color: var(--muted);
+  color: var(--subtle);
   text-transform: uppercase;
 }
 
@@ -126,12 +127,49 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 80ms ease, color 80ms ease;
+  transition: background 80ms ease, color 80ms ease, transform 60ms ease;
 }
 
 .icon-btn:hover {
   color: var(--fg);
   background: var(--bg-hover);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+/* Sync button feedback: hover bumps in accent, the icon spins while
+   the request is in flight and briefly after (kept on for ~350ms even
+   if the response is instant, so the click feels acknowledged). */
+.sync-btn:hover {
+  color: var(--accent);
+}
+
+.sync-btn .sync-icon {
+  transform-origin: center;
+  transition: transform 200ms ease;
+}
+
+.sync-btn.is-syncing {
+  color: var(--accent);
+}
+
+.sync-btn.is-syncing .sync-icon {
+  animation: sync-spin 0.7s linear infinite;
+}
+
+.sync-btn:disabled {
+  cursor: progress;
+}
+
+@keyframes sync-spin {
+  from {
+    transform: rotate(0);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .btn-link {
@@ -301,20 +339,28 @@ button {
 .space-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 4px 8px;
+  gap: 6px;
+  padding: 2px 2px 4px;
   position: relative;
 }
 
 .space-header-name {
   flex: 1;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.dot-small {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 
 .dot-large {
   width: 10px;
@@ -326,7 +372,7 @@ button {
 .name-input {
   flex: 1;
   font: inherit;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: inherit;
   background: var(--bg);
@@ -399,6 +445,66 @@ button {
 .live-error {
   color: var(--danger);
   font-size: 11px;
+}
+
+/* Live folder header: name color stays muted; the bouncing rainbow
+   dots are the pop element so we don't need extra background fill. */
+.folder-header.is-live .folder-name {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* RunCat: 5-frame leg cycle + horizontal slide across the SVG. The
+   .runcat group translates left→right and resets; inside it, only one
+   .frame is visible at a time (cycled at ~12fps via stagger). */
+.live-graph-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: 4px;
+  color: var(--fg);
+  overflow: hidden;
+}
+
+.live-graph .runcat {
+  animation: runcat-slide 1.8s linear infinite;
+}
+
+@keyframes runcat-slide {
+  0% { transform: translateX(-13px); }
+  100% { transform: translateX(15px); }
+}
+
+.live-graph .frame {
+  opacity: 0;
+  animation: runcat-flicker 0.4s steps(1, end) infinite;
+}
+
+.live-graph .frame.f0 { animation-delay: 0s; }
+.live-graph .frame.f1 { animation-delay: 0.08s; }
+.live-graph .frame.f2 { animation-delay: 0.16s; }
+.live-graph .frame.f3 { animation-delay: 0.24s; }
+.live-graph .frame.f4 { animation-delay: 0.32s; }
+
+@keyframes runcat-flicker {
+  0%, 19% { opacity: 1; }
+  20%, 100% { opacity: 0; }
+}
+
+.live-graph-wrap.has-error {
+  color: var(--danger);
+}
+
+.live-graph-wrap.has-error .runcat {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-graph .runcat {
+    animation: none;
+  }
+  .live-graph .frame.f0 { opacity: 1; }
+  .live-graph .frame:not(.f0) { display: none; }
 }
 
 /* ---- Tab rows ------------------------------------------------------- */

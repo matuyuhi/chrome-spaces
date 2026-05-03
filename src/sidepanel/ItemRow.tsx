@@ -140,11 +140,6 @@ export function ItemRow({
           <span className="favicon-placeholder" aria-hidden />
         )}
         <span className="tab-title">
-          {isPinned && (
-            <span className="pin-indicator" aria-label="Pinned">
-              ·
-            </span>
-          )}
           {tab?.title || tab?.url || `(tab ${item.tabId})`}
         </span>
       </button>

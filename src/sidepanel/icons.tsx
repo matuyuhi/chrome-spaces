@@ -107,6 +107,82 @@ export function Download(p: IconProps) {
   )
 }
 
+// Runcat-style mascot: a tiny black cat sprinting across the header.
+// 5 hand-drawn frames cycle to animate the legs / tail; the whole cat
+// translates left→right and resets, like RunCat in the macOS menubar.
+//
+// Each <g class="frame fN"> is a pose. CSS shows one at a time via a
+// staggered visibility flicker, while the parent .runcat group slides
+// horizontally for the "running across the panel" effect.
+export function LiveGraph({ size = 24 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={(size * 12) / 28}
+      viewBox="0 0 28 12"
+      aria-hidden
+      className="live-graph"
+    >
+      <g className="runcat">
+        {/* Frame 0: standing, all four legs grounded */}
+        <g className="frame f0">
+          {/* tail */}
+          <path d="M1 7 Q -1 4 0 3" stroke="currentColor" strokeWidth="1" fill="none" strokeLinecap="round" />
+          {/* body */}
+          <path d="M2 7 L2 5 Q2 4 3 4 L8 4 Q9 4 9 3 L10 3 L10 4 L11 4 Q12 4 12 5 L12 7 Z" fill="currentColor" />
+          {/* ears */}
+          <path d="M9.5 3 L9.7 2 L9.9 3 Z" fill="currentColor" />
+          {/* legs */}
+          <rect x="3" y="7" width="0.8" height="2" fill="currentColor" />
+          <rect x="5" y="7" width="0.8" height="2" fill="currentColor" />
+          <rect x="9" y="7" width="0.8" height="2" fill="currentColor" />
+          <rect x="11" y="7" width="0.8" height="2" fill="currentColor" />
+        </g>
+        {/* Frame 1: mid-stride, front+back diagonal pair lifted */}
+        <g className="frame f1">
+          <path d="M1 6 Q -1 4 0 2" stroke="currentColor" strokeWidth="1" fill="none" strokeLinecap="round" />
+          <path d="M2 6 L2 4 Q2 3 3 3 L8 3 Q9 3 9 2 L10 2 L10 3 L11 3 Q12 3 12 4 L12 6 Z" fill="currentColor" />
+          <path d="M9.5 2 L9.7 1 L9.9 2 Z" fill="currentColor" />
+          <rect x="3" y="6" width="0.8" height="2.5" fill="currentColor" />
+          <rect x="5.5" y="6" width="0.8" height="1.2" fill="currentColor" />
+          <rect x="8.5" y="6" width="0.8" height="1.2" fill="currentColor" />
+          <rect x="11" y="6" width="0.8" height="2.5" fill="currentColor" />
+        </g>
+        {/* Frame 2: airborne, legs tucked */}
+        <g className="frame f2">
+          <path d="M1 5 Q -1 2 1 1" stroke="currentColor" strokeWidth="1" fill="none" strokeLinecap="round" />
+          <path d="M2 5 L2 3 Q2 2 3 2 L8 2 Q9 2 9 1 L10 1 L10 2 L11 2 Q12 2 12 3 L12 5 Z" fill="currentColor" />
+          <path d="M9.5 1 L9.7 0 L9.9 1 Z" fill="currentColor" />
+          <rect x="4" y="5" width="0.8" height="1" fill="currentColor" />
+          <rect x="6" y="5" width="0.8" height="1" fill="currentColor" />
+          <rect x="8" y="5" width="0.8" height="1" fill="currentColor" />
+          <rect x="10" y="5" width="0.8" height="1" fill="currentColor" />
+        </g>
+        {/* Frame 3: opposite mid-stride */}
+        <g className="frame f3">
+          <path d="M1 6 Q -1 5 0 3" stroke="currentColor" strokeWidth="1" fill="none" strokeLinecap="round" />
+          <path d="M2 6 L2 4 Q2 3 3 3 L8 3 Q9 3 9 2 L10 2 L10 3 L11 3 Q12 3 12 4 L12 6 Z" fill="currentColor" />
+          <path d="M9.5 2 L9.7 1 L9.9 2 Z" fill="currentColor" />
+          <rect x="3.5" y="6" width="0.8" height="1.2" fill="currentColor" />
+          <rect x="5" y="6" width="0.8" height="2.5" fill="currentColor" />
+          <rect x="9" y="6" width="0.8" height="2.5" fill="currentColor" />
+          <rect x="10.5" y="6" width="0.8" height="1.2" fill="currentColor" />
+        </g>
+        {/* Frame 4: landing, back to ground */}
+        <g className="frame f4">
+          <path d="M1 7 Q -1 5 0 3" stroke="currentColor" strokeWidth="1" fill="none" strokeLinecap="round" />
+          <path d="M2 7 L2 5 Q2 4 3 4 L8 4 Q9 4 9 3 L10 3 L10 4 L11 4 Q12 4 12 5 L12 7 Z" fill="currentColor" />
+          <path d="M9.5 3 L9.7 2 L9.9 3 Z" fill="currentColor" />
+          <rect x="3" y="7" width="0.8" height="2" fill="currentColor" />
+          <rect x="5.5" y="7" width="0.8" height="2" fill="currentColor" />
+          <rect x="8.5" y="7" width="0.8" height="2" fill="currentColor" />
+          <rect x="11" y="7" width="0.8" height="2" fill="currentColor" />
+        </g>
+      </g>
+    </svg>
+  )
+}
+
 export function AlertTriangle(p: IconProps) {
   return (
     <Svg {...p}>

@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  LiveGraph,
   MoreHorizontal,
   RefreshCw,
 } from './icons'
@@ -24,6 +25,7 @@ export function FolderView({ folder, depth, isRoot }: Props) {
   const [collapsed, setCollapsed] = useState(folder.collapsed && !isRoot)
   const [editingName, setEditingName] = useState(false)
   const [draftName, setDraftName] = useState(folder.name)
+  const [syncing, setSyncing] = useState(false)
   const menuId = `folder:${folder.id}`
 
   const liveError = folder.live?.lastSyncError
@@ -47,7 +49,13 @@ export function FolderView({ folder, depth, isRoot }: Props) {
     <div className={`folder ${isDraggingThis ? 'is-dragging' : ''}`}>
       {!isRoot && (
         <div
-          className={`folder-header ${isDropInto ? 'is-drop-into' : ''}`}
+          className={[
+            'folder-header',
+            isDropInto && 'is-drop-into',
+            isLive && 'is-live',
+          ]
+            .filter(Boolean)
+            .join(' ')}
           style={{ paddingLeft: depth * 12 }}
           draggable
           onDragStart={(e) => {
@@ -134,6 +142,14 @@ export function FolderView({ folder, depth, isRoot }: Props) {
             />
           ) : (
             <span className="folder-name">
+              {isLive && (
+                <span
+                  className={`live-graph-wrap ${liveError ? 'has-error' : ''}`}
+                  title={liveError ?? 'Live folder'}
+                >
+                  <LiveGraph size={20} />
+                </span>
+              )}
               {folder.emoji ? `${folder.emoji} ` : null}
               {folder.name}
               {isLive && liveError && (
@@ -145,19 +161,26 @@ export function FolderView({ folder, depth, isRoot }: Props) {
           )}
           {isLive && (
             <button
-              className="icon-btn"
+              className={`icon-btn sync-btn ${syncing ? 'is-syncing' : ''}`}
               title={liveError ?? 'Sync now'}
+              disabled={syncing}
               onClick={async () => {
+                if (syncing) return
+                setSyncing(true)
                 try {
                   await sendMessage({ type: 'syncLiveFolder', folderId: folder.id })
                   await ctx.refresh()
                 } catch (e) {
                   ctx.onError(e)
+                } finally {
+                  // Hold the spin a bit so a snappy network response still
+                  // gives visible feedback, then let go.
+                  setTimeout(() => setSyncing(false), 350)
                 }
               }}
               aria-label="Sync"
             >
-              <RefreshCw size={14} />
+              <RefreshCw size={14} className="sync-icon" />
             </button>
           )}
           <button
