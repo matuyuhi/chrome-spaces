@@ -98,7 +98,7 @@ export interface MessageResponseMap {
   setGitHubToken: void
   getGitHubApiBaseUrl: { url: string; isCustom: boolean }
   setGitHubApiBaseUrl: void
-  getGitHubClientId: { hasClientId: boolean }
+  getGitHubClientId: { hasOverride: boolean; hasBuiltin: boolean }
   setGitHubClientId: void
   startGitHubOAuth: {
     deviceCode: string

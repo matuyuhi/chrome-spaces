@@ -25,6 +25,8 @@ jobs:
       - run: npm ci
 
       - name: Build extension
+        env:
+          VITE_GITHUB_CLIENT_ID: ${{ secrets.VITE_GITHUB_CLIENT_ID }}
         run: npm run build
 
       - name: Package extension zip

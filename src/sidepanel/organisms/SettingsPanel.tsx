@@ -110,7 +110,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [baseUrlIsCustom, setBaseUrlIsCustom] = useState(false)
   const [baseUrlStatus, setBaseUrlStatus] = useState<string | undefined>()
   const [clientId, setClientId] = useState('')
-  const [hasClientId, setHasClientId] = useState<boolean | undefined>(undefined)
+  const [hasOverride, setHasOverride] = useState<boolean | undefined>(undefined)
+  const [hasBuiltin, setHasBuiltin] = useState<boolean>(false)
+  const canSignIn = hasOverride || hasBuiltin
   const [oauthState, setOauthState] = useState<
     | { phase: 'idle' }
     | {
@@ -133,8 +135,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       setBaseUrl(isCustom ? url : '')
       setBaseUrlIsCustom(isCustom)
     })
-    void sendMessage({ type: 'getGitHubClientId' }).then(({ hasClientId }) =>
-      setHasClientId(hasClientId),
+    void sendMessage({ type: 'getGitHubClientId' }).then(
+      ({ hasOverride, hasBuiltin }) => {
+        setHasOverride(hasOverride)
+        setHasBuiltin(hasBuiltin)
+      },
     )
   }, [])
 
@@ -216,7 +221,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       type: 'setGitHubClientId',
       clientId: clientId.trim() || undefined,
     })
-    setHasClientId(!!clientId.trim())
+    setHasOverride(!!clientId.trim())
     setClientId('')
   }
 
@@ -388,44 +393,59 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       <Section>
         <h2>Option A — Sign in with OAuth (Device Flow)</h2>
         <p className="muted">
-          Sign in via a GitHub OAuth App you control. Create one at{' '}
-          <a
-            href="https://github.com/settings/applications/new"
-            target="_blank"
-            rel="noreferrer"
-          >
-            github.com/settings/applications/new
-          </a>{' '}
-          (any name and homepage URL work), then enable{' '}
-          <strong>Device Flow</strong> on the app's settings page and paste the{' '}
-          <code>Client ID</code> here. No client secret is needed.
+          {hasBuiltin
+            ? 'This build ships a maintainer-registered OAuth App. Click "Sign in with GitHub" below — a tab opens, you enter the displayed code, and the access token comes back here.'
+            : 'No OAuth App is bundled in this build. Either rebuild with VITE_GITHUB_CLIENT_ID set in .env, or paste a Client ID under "Advanced" below.'}
         </p>
         <p className="muted">
           Status:{' '}
-          {hasClientId === undefined
+          {hasOverride === undefined
             ? '…'
-            : hasClientId
-              ? '✓ client_id saved'
-              : '— client_id not set'}
+            : hasOverride
+              ? '✓ using override Client ID'
+              : hasBuiltin
+                ? '✓ using built-in Client ID'
+                : '— no Client ID available'}
         </p>
-        <input
-          type="text"
-          autoComplete="off"
-          placeholder="Iv1.xxxxxxxxxxxx"
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-        />
         <Actions>
-          <SecondaryButton onClick={() => void handleSaveClientId()}>
-            {clientId.trim() ? 'Save client_id' : hasClientId ? 'Clear' : 'Save'}
-          </SecondaryButton>
           <PrimaryButton
             onClick={() => void handleStartOAuth()}
-            disabled={!hasClientId || oauthState.phase === 'awaiting'}
+            disabled={!canSignIn || oauthState.phase === 'awaiting'}
           >
             {oauthState.phase === 'awaiting' ? 'Waiting…' : 'Sign in with GitHub'}
           </PrimaryButton>
         </Actions>
+        <details>
+          <summary
+            style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer' }}
+          >
+            Advanced — Override OAuth Client ID
+          </summary>
+          <p className="muted">
+            Use a different OAuth App for this device only. Create one at{' '}
+            <a
+              href="https://github.com/settings/applications/new"
+              target="_blank"
+              rel="noreferrer"
+            >
+              github.com/settings/applications/new
+            </a>
+            , enable <strong>Device Flow</strong>, then paste the Client ID
+            here. Clear to fall back to the built-in.
+          </p>
+          <input
+            type="text"
+            autoComplete="off"
+            placeholder="Iv1.xxxxxxxxxxxx"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+          />
+          <Actions>
+            <SecondaryButton onClick={() => void handleSaveClientId()}>
+              {clientId.trim() ? 'Save override' : hasOverride ? 'Clear override' : 'Save'}
+            </SecondaryButton>
+          </Actions>
+        </details>
         {oauthState.phase === 'awaiting' && (
           <p className="muted">
             Enter <code>{oauthState.userCode}</code> at{' '}
