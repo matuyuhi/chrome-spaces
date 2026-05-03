@@ -58,6 +58,8 @@ export type Message =
   | { type: 'activateTab'; tabId: number }
   | { type: 'getGitHubToken' }
   | { type: 'setGitHubToken'; token?: string }
+  | { type: 'getGitHubApiBaseUrl' }
+  | { type: 'setGitHubApiBaseUrl'; url?: string }
   | { type: 'getUIPrefs' }
   | { type: 'setUIPrefs'; prefs: Partial<UIPreferences> }
   | { type: 'importStore'; store: SpaceStore; currentWindowId: number }
@@ -88,6 +90,8 @@ export interface MessageResponseMap {
   activateTab: void
   getGitHubToken: { hasToken: boolean }
   setGitHubToken: void
+  getGitHubApiBaseUrl: { url: string; isCustom: boolean }
+  setGitHubApiBaseUrl: void
   getUIPrefs: UIPreferences
   setUIPrefs: void
   importStore: void

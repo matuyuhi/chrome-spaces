@@ -223,6 +223,22 @@ describe('fetchSearchResults', () => {
     expect(headers['If-None-Match']).toBe('W/"abc123"')
   })
 
+  it('uses a custom apiBaseUrl for GHES', async () => {
+    const fetchSpy = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ total_count: 0, incomplete_results: false, items: [] }),
+        { status: 200 },
+      ),
+    )
+    await fetchSearchResults(
+      { type: 'github-prs', preset: 'authored' },
+      'ghp_test',
+      { fetch: fetchSpy, apiBaseUrl: 'https://ghe.example.com/api/v3/' },
+    )
+    const url = (fetchSpy.mock.calls[0] as unknown as [string])[0]
+    expect(url.startsWith('https://ghe.example.com/api/v3/search/issues?')).toBe(true)
+  })
+
   it('throws GitHubError on non-OK responses', async () => {
     const fetchSpy = vi.fn(async () => new Response('bad token', { status: 401 }))
     await expect(

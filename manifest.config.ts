@@ -7,6 +7,9 @@ export default defineManifest({
   description: 'Arc-like sidebar for Chrome: Spaces, nested folders, GitHub Live folders.',
   permissions: ['tabs', 'tabGroups', 'storage', 'alarms', 'contextMenus', 'sidePanel'],
   host_permissions: ['https://api.github.com/*'],
+  // GHES base URLs are entered at runtime; we ask for the specific origin
+  // via chrome.permissions.request when the user saves a custom base URL.
+  optional_host_permissions: ['https://*/*'],
   background: {
     service_worker: 'src/background/index.ts',
     type: 'module',
