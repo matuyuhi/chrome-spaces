@@ -33,5 +33,6 @@ export default defineManifest({
     'new-space': { description: 'Create new Space' },
     'reset-current-tab': { description: 'Reset current tab to its base URL' },
     'sync-current-live': { description: 'Sync the Live folder of the current tab' },
+    'open-command-bar': { description: 'Open the Spaces command bar (search tabs across spaces)' },
   },
 })
