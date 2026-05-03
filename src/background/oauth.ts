@@ -7,10 +7,11 @@
 // Device Flow needs only the client_id and a `POST` to two endpoints,
 // which keeps everything inside the side panel.
 //
-// The user must:
-//  1. Create a GitHub OAuth App (Settings → Developer settings → OAuth
-//     Apps → New). The "Enable Device Flow" toggle MUST be on.
-//  2. Paste the resulting client_id into Settings.
+// Client ID resolution order:
+//   1. The user's saved override in Settings (chrome.storage.local).
+//   2. The build-time `VITE_GITHUB_CLIENT_ID` baked in via .env (the
+//      common case — maintainer registers one OAuth App for everyone
+//      using this build).
 
 import { getGitHubClientId, setGitHubToken } from './secret-storage'
 
@@ -19,6 +20,19 @@ const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token'
 // Read access to PRs/issues across orgs the user belongs to. Matches the
 // scopes recommended in the SettingsPanel PAT note.
 const DEFAULT_SCOPE = 'repo read:org'
+
+// Vite injects this at build time; falsy when .env is missing or empty.
+// `as string | undefined` because `import.meta.env` types are loose.
+export const BUILTIN_GITHUB_CLIENT_ID = (
+  (import.meta.env?.VITE_GITHUB_CLIENT_ID as string | undefined) ?? ''
+).trim() || undefined
+
+export async function resolveClientId(): Promise<string | undefined> {
+  // Per-user override beats built-in so a fork or contributor can point
+  // at their own OAuth App without rebuilding.
+  const saved = await getGitHubClientId()
+  return saved ?? BUILTIN_GITHUB_CLIENT_ID
+}
 
 export interface DeviceCode {
   deviceCode: string
@@ -39,10 +53,10 @@ interface DeviceCodeResponse {
 export async function startDeviceFlow(
   fetchImpl: typeof fetch = fetch,
 ): Promise<DeviceCode> {
-  const clientId = await getGitHubClientId()
+  const clientId = await resolveClientId()
   if (!clientId)
     throw new Error(
-      'No GitHub OAuth client_id saved. Open Settings → GitHub OAuth and paste your OAuth App\'s client_id first.',
+      'No GitHub OAuth client_id available. This build did not bundle one — paste a client_id under Settings → "Advanced — Override OAuth Client ID".',
     )
   const body = new URLSearchParams({ client_id: clientId, scope: DEFAULT_SCOPE })
   const res = await fetchImpl(DEVICE_CODE_URL, {
@@ -97,7 +111,7 @@ export async function pollDeviceFlow(
   deviceCode: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<PollResult> {
-  const clientId = await getGitHubClientId()
+  const clientId = await resolveClientId()
   if (!clientId) throw new Error('client_id was cleared mid-flow')
   const body = new URLSearchParams({
     client_id: clientId,

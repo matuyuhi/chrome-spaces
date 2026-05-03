@@ -43,7 +43,7 @@ import {
   setGitHubClientId,
   setGitHubToken,
 } from './secret-storage'
-import { pollDeviceFlow, startDeviceFlow } from './oauth'
+import { BUILTIN_GITHUB_CLIENT_ID, pollDeviceFlow, startDeviceFlow } from './oauth'
 import { getUIPrefs, setUIPrefs } from './ui-prefs'
 import { ensureAutoArchiveAlarm } from './auto-archive'
 import { type Message, type MessageResponse } from '../shared/messaging'
@@ -156,7 +156,10 @@ async function handleMessage(msg: Message): Promise<unknown> {
     case 'setGitHubApiBaseUrl':
       return setGitHubApiBaseUrl(msg.url)
     case 'getGitHubClientId':
-      return { hasClientId: !!(await getGitHubClientId()) }
+      return {
+        hasOverride: !!(await getGitHubClientId()),
+        hasBuiltin: !!BUILTIN_GITHUB_CLIENT_ID,
+      }
     case 'setGitHubClientId':
       return setGitHubClientId(msg.clientId)
     case 'startGitHubOAuth':
