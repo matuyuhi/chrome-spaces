@@ -35,6 +35,7 @@ export type LiveSource =
       repoFilter?: string
     }
   | { type: 'github-issues'; preset: 'custom'; query: string }
+  | { type: 'rss'; url: string }
 
 export interface LiveConfig {
   source: LiveSource

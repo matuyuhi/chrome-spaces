@@ -1,8 +1,16 @@
 import { type LiveSource } from '../../../shared/types'
+import { getGitHubApiBaseUrl, getGitHubToken } from '../../secret-storage'
+import {
+  type FetchContext,
+  type LiveItem,
+  type SearchResult,
+  type SourceAdapter,
+  SourceError,
+} from './types'
 
-export interface ItemRef {
-  externalId: string
-  url: string
+// GitHub-specific extras kept on every item (preserved for future UI
+// like draft badges); LiveItem only requires externalId + url.
+export interface ItemRef extends LiveItem {
   title: string
   number: number
   repo: string
@@ -11,15 +19,17 @@ export interface ItemRef {
   updatedAt: string
 }
 
-export class GitHubError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-  ) {
-    super(message)
+// GitHub-specific error subclass — kept so error formatting can still
+// distinguish GitHub HTTP failures from other adapters.
+export class GitHubError extends SourceError {
+  constructor(status: number, message: string) {
+    super(status, message)
     this.name = 'GitHubError'
   }
 }
+
+// Re-export so callers can keep importing SearchResult from this module.
+export type { SearchResult } from './types'
 
 interface SearchIssueItem {
   html_url: string
@@ -100,10 +110,6 @@ export function parseItem(item: SearchIssueItem): ItemRef {
   }
 }
 
-export type SearchResult =
-  | { notModified: false; items: ItemRef[]; etag?: string }
-  | { notModified: true; etag: string }
-
 export interface FetchOptions {
   etag?: string
   fetch?: typeof fetch
@@ -145,4 +151,22 @@ export async function fetchSearchResults(
   const data = (await res.json()) as SearchResponse
   const etag = res.headers.get('ETag') ?? undefined
   return { notModified: false, items: data.items.map(parseItem), etag }
+}
+
+export const githubAdapter: SourceAdapter<
+  Extract<LiveSource, { type: 'github-prs' | 'github-issues' }>
+> = {
+  async fetch(source, ctx: FetchContext): Promise<SearchResult> {
+    const token = await getGitHubToken()
+    if (!token)
+      throw new Error(
+        'GitHub token not configured. Open Spaces side panel → Settings → paste a PAT.',
+      )
+    const apiBaseUrl = await getGitHubApiBaseUrl()
+    return fetchSearchResults(source, token, {
+      etag: ctx.etag,
+      fetch: ctx.fetch,
+      apiBaseUrl,
+    })
+  },
 }

@@ -38,6 +38,7 @@ type FlatPreset =
   | 'issue-authored'
   | 'issue-mentioned'
   | 'issue-custom'
+  | 'rss'
 
 const PR_PRESETS: { value: FlatPreset; label: string }[] = [
   { value: 'pr-review-requested', label: 'Review requested' },
@@ -53,11 +54,16 @@ const ISSUE_PRESETS: { value: FlatPreset; label: string }[] = [
   { value: 'issue-custom', label: 'Custom search query' },
 ]
 
+const OTHER_PRESETS: { value: FlatPreset; label: string }[] = [
+  { value: 'rss', label: 'RSS / Atom feed' },
+]
+
 function presetToSource(
   preset: FlatPreset,
   user: string,
   customQuery: string,
   repoFilter: string,
+  rssUrl: string,
 ): LiveSource | undefined {
   const filter = repoFilter.trim() || undefined
   switch (preset) {
@@ -87,11 +93,14 @@ function presetToSource(
       return customQuery.trim()
         ? { type: 'github-issues', preset: 'custom', query: customQuery.trim() }
         : undefined
+    case 'rss':
+      return rssUrl.trim() ? { type: 'rss', url: rssUrl.trim() } : undefined
   }
 }
 
 function sourceToPreset(source: LiveSource | undefined): FlatPreset {
   if (!source) return 'pr-review-requested'
+  if (source.type === 'rss') return 'rss'
   if (source.type === 'github-prs') {
     return source.preset === 'custom' ? 'pr-custom' : (`pr-${source.preset}` as FlatPreset)
   }
@@ -132,20 +141,42 @@ export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
     initial && 'repoFilter' in initial.source ? (initial.source.repoFilter ?? '') : '',
   )
   const [customQuery, setCustomQuery] = useState(
-    initial && initial.source.preset === 'custom'
+    initial &&
+      'preset' in initial.source &&
+      initial.source.preset === 'custom'
       ? initial.source.query
       : defaultCustomQueryFor(initialPreset),
   )
+  const [rssUrl, setRssUrl] = useState(
+    initial && initial.source.type === 'rss' ? initial.source.url : '',
+  )
   const [interval, setIntervalMin] = useState(initial?.refreshIntervalMin ?? 0)
   const [submitting, setSubmitting] = useState(false)
+  const [permError, setPermError] = useState<string | undefined>()
   const isEdit = mode === 'edit'
   const isCustom = preset === 'pr-custom' || preset === 'issue-custom'
+  const isRss = preset === 'rss'
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!name.trim() || submitting) return
-    const source = presetToSource(preset, user, customQuery, repoFilter)
+    setPermError(undefined)
+    const source = presetToSource(preset, user, customQuery, repoFilter, rssUrl)
     if (!source) return
+    if (source.type === 'rss') {
+      let origin: string
+      try {
+        origin = new URL(source.url).origin
+      } catch {
+        setPermError('Enter a valid feed URL (https://…).')
+        return
+      }
+      const granted = await chrome.permissions.request({ origins: [`${origin}/*`] })
+      if (!granted) {
+        setPermError('Permission denied — Chrome refused fetch access for that origin.')
+        return
+      }
+    }
     setSubmitting(true)
     try {
       await onSubmit({ name: name.trim(), source, refreshIntervalMin: interval })
@@ -209,10 +240,17 @@ export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
               </option>
             ))}
           </optgroup>
+          <optgroup label="Other">
+            {OTHER_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </optgroup>
         </select>
       </Field>
 
-      {!isCustom && (
+      {!isCustom && !isRss && (
         <Field>
           <span>User (default: @me)</span>
           <input
@@ -223,7 +261,7 @@ export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
         </Field>
       )}
 
-      {!isCustom && (
+      {!isCustom && !isRss && (
         <Field>
           <span>Filter (empty/* = all; ! to exclude)</span>
           <input
@@ -243,6 +281,22 @@ export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
             placeholder={placeholderQueryFor(preset)}
           />
         </Field>
+      )}
+
+      {isRss && (
+        <Field>
+          <span>Feed URL (RSS or Atom)</span>
+          <input
+            type="url"
+            value={rssUrl}
+            onChange={(e) => setRssUrl(e.target.value)}
+            placeholder="https://example.com/feed.xml"
+          />
+        </Field>
+      )}
+
+      {permError && (
+        <div style={{ color: 'tomato', fontSize: 12 }}>{permError}</div>
       )}
 
       <Field>
