@@ -67,9 +67,12 @@ async function applyDiff(space: LiveSpace, items: ItemRef[]): Promise<void> {
       await chrome.tabs.group({ tabIds: [tab.id], groupId: space.groupId })
       // Live folders can fan out to dozens of PRs/issues at once. Pre-loading
       // every one of them spikes memory and chews through GitHub session
-      // state for no benefit — most tabs are never opened. Discard cancels
-      // the in-flight load and leaves the tab in the strip; Chrome
-      // re-fetches on the next user activation.
+      // state for no benefit — most tabs are never opened. Wait for the URL
+      // to commit, then discard so Chrome parks the tab unloaded with the
+      // URL preserved. Without the wait, discard runs before navigation
+      // commits and the tab ends up as a permanent about:blank that does
+      // nothing on click.
+      await waitForUrlCommit(tab.id, item.url)
       try {
         await chrome.tabs.discard(tab.id)
       } catch {
@@ -119,6 +122,43 @@ async function applyDiff(space: LiveSpace, items: ItemRef[]): Promise<void> {
     if (!sp || !isLive(sp)) return
     sp.managedTabs = finalManaged
     if (starterToClose !== undefined) sp.starterTabId = undefined
+  })
+}
+
+function waitForUrlCommit(tabId: number, expected: string, timeoutMs = 1500): Promise<void> {
+  const isReady = (tab: chrome.tabs.Tab): boolean => {
+    const url = tab.url || tab.pendingUrl
+    if (!url) return false
+    if (url === 'about:blank' && expected !== 'about:blank') return false
+    return true
+  }
+  return new Promise((resolve) => {
+    let done = false
+    const finish = (): void => {
+      if (done) return
+      done = true
+      chrome.tabs.onUpdated.removeListener(listener)
+      clearTimeout(timer)
+      resolve()
+    }
+    const listener = (
+      id: number,
+      _info: chrome.tabs.TabChangeInfo,
+      tab: chrome.tabs.Tab,
+    ): void => {
+      if (id !== tabId) return
+      if (isReady(tab)) finish()
+    }
+    chrome.tabs.onUpdated.addListener(listener)
+    const timer = setTimeout(finish, timeoutMs)
+    // race-protect: if the URL has already committed by the time we attach,
+    // we never get an onUpdated event.
+    chrome.tabs
+      .get(tabId)
+      .then((tab) => {
+        if (isReady(tab)) finish()
+      })
+      .catch(finish)
   })
 }
 
