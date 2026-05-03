@@ -42,6 +42,28 @@ export async function handleCommand(command: string, windowId: number): Promise<
     return
   }
 
+  if (command === 'open-command-bar') {
+    const sidePanelApi = chrome.sidePanel as
+      | { open?: (opts: { windowId: number }) => Promise<void> }
+      | undefined
+    if (sidePanelApi?.open) {
+      try {
+        await sidePanelApi.open({ windowId })
+      } catch {
+        /* user gesture missing — they can open via toolbar */
+      }
+    }
+    // Tell whichever side panel is mounted in this window to open its
+    // overlay. The panel filters by windowId; messages to closed panels
+    // simply have no listener and don't error.
+    try {
+      await chrome.runtime.sendMessage({ type: 'openCommandBar', windowId })
+    } catch {
+      /* no listener — panel isn't open yet, will open on next launch */
+    }
+    return
+  }
+
   if (command === 'sync-current-live') {
     const [activeTab] = await chrome.tabs.query({ windowId, active: true })
     if (typeof activeTab?.id !== 'number') return

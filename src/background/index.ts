@@ -165,6 +165,9 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return getUIPrefs()
     case 'setUIPrefs':
       return setUIPrefs(msg.prefs)
+    case 'openCommandBar':
+      // Background → side panel broadcast; the side panel handles it.
+      return undefined
   }
 }
 

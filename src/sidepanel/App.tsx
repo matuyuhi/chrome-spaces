@@ -18,6 +18,7 @@ import {
   type LiveFolderFormResult,
 } from './organisms/LiveFolderForm'
 import { SettingsPanel } from './organisms/SettingsPanel'
+import { CommandBar } from './organisms/CommandBar'
 import { GlobalStyles } from './globalStyles'
 
 type View =
@@ -56,6 +57,7 @@ export function App() {
   const [openMenu, setOpenMenu] = useState<string | undefined>()
   const [drag, setDrag] = useState<DragState | undefined>()
   const [dropPos, setDropPos] = useState<DropPos | undefined>()
+  const [commandBarOpen, setCommandBarOpen] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -184,6 +186,33 @@ export function App() {
       chrome.tabs.onMoved.removeListener(listener)
     }
   }, [refresh])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // ⌘K / Ctrl+K opens the command bar; ignore when typing in inputs.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        const tag = (e.target as HTMLElement | null)?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        e.preventDefault()
+        setCommandBarOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
+    if (windowId === undefined) return
+    const listener = (msg: unknown): boolean => {
+      const m = msg as { type?: string; windowId?: number }
+      if (m?.type === 'openCommandBar' && m.windowId === windowId) {
+        setCommandBarOpen(true)
+      }
+      return false
+    }
+    chrome.runtime.onMessage.addListener(listener)
+    return () => chrome.runtime.onMessage.removeListener(listener)
+  }, [windowId])
 
   useEffect(() => {
     if (!openMenu) return
@@ -427,6 +456,9 @@ export function App() {
           <SpaceContent space={active} />
         )}
       </Root>
+      {commandBarOpen && (
+        <CommandBar onClose={() => setCommandBarOpen(false)} />
+      )}
     </AppCtxProvider>
   )
 }

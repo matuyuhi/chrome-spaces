@@ -67,6 +67,8 @@ export type Message =
   | { type: 'getUIPrefs' }
   | { type: 'setUIPrefs'; prefs: Partial<UIPreferences> }
   | { type: 'importStore'; store: SpaceStore; currentWindowId: number }
+  // Background → side panel broadcast, not a request.
+  | { type: 'openCommandBar'; windowId: number }
 
 export interface MessageResponseMap {
   getStore: SpaceStore
@@ -114,6 +116,7 @@ export interface MessageResponseMap {
   getUIPrefs: UIPreferences
   setUIPrefs: void
   importStore: void
+  openCommandBar: void
 }
 
 export type UIFontSize = 1 | 2 | 3 | 4 | 5
