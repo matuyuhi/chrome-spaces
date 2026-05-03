@@ -1,19 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { syncLiveSpace } from './sync-engine'
-import { createLiveSpace, createStaticSpace, getSpace, switchTo } from '../space-manager'
+import { syncLiveFolder } from './sync-engine'
+import {
+  createFolder,
+  createSpace,
+  switchTo,
+} from '../space-manager'
 import { onTabCreated } from '../handlers'
 import { setGitHubToken } from '../secret-storage'
-import { isLive } from '../../shared/types'
+import { loadStore } from '../storage'
 import { setupChromeMock, type ChromeMock } from '../test-utils'
 
-function searchResponse(items: { repo: string; number: number; title?: string }[]): Response {
+function searchResponse(items: { repo: string; number: number }[]): Response {
   return new Response(
     JSON.stringify({
       total_count: items.length,
       incomplete_results: false,
       items: items.map((i) => ({
         html_url: `https://github.com/${i.repo}/pull/${i.number}`,
-        title: i.title ?? `PR ${i.number}`,
+        title: `PR ${i.number}`,
         number: i.number,
         state: 'open',
         draft: false,
@@ -24,152 +28,101 @@ function searchResponse(items: { repo: string; number: number; title?: string }[
   )
 }
 
-describe('syncLiveSpace', () => {
+describe('syncLiveFolder', () => {
   let mock: ChromeMock
 
   beforeEach(() => {
     mock = setupChromeMock()
   })
 
-  it('adds tabs for newly fetched PRs and closes the starter tab', async () => {
+  it('places synced tabs in the live folder, not in the active Space', async () => {
     await setGitHubToken('ghp_test')
-    const space = await createLiveSpace({
+    const space = await createSpace({ name: 'Work', color: 'red', windowId: 1 })
+    await switchTo(space.id, 1)
+    const live = await createFolder({
+      parentFolderId: space.rootFolderId,
       name: 'Reviews',
-      color: 'blue',
-      windowId: 1,
-      source: { type: 'github-prs', preset: 'review-requested' },
-    })
-    expect(space.starterTabId).toBeDefined()
-
-    const fakeFetch = vi.fn(async () =>
-      searchResponse([{ repo: 'octo/repo', number: 1 }, { repo: 'octo/repo', number: 2 }]),
-    )
-
-    await syncLiveSpace(space.id, fakeFetch as unknown as typeof fetch)
-
-    const updated = await getSpace(space.id)
-    expect(updated && isLive(updated)).toBe(true)
-    if (updated && isLive(updated)) {
-      expect(updated.managedTabs).toHaveLength(2)
-      expect(updated.managedTabs.map((t) => t.externalId).sort()).toEqual([
-        'octo/repo#1',
-        'octo/repo#2',
-      ])
-      expect(updated.starterTabId).toBeUndefined()
-      expect(updated.lastSyncError).toBeUndefined()
-      expect(updated.lastSyncAt).toBeDefined()
-    }
-
-    // Starter tab must be gone, real tabs must be in the live group
-    expect(mock.tabs.has(space.starterTabId!)).toBe(false)
-    const liveTabs = [...mock.tabs.values()].filter((t) => t.groupId === space.groupId)
-    expect(liveTabs).toHaveLength(2)
-  })
-
-  it('removes tabs for PRs no longer in the result set', async () => {
-    await setGitHubToken('ghp_test')
-    const space = await createLiveSpace({
-      name: 'Reviews',
-      color: 'blue',
-      windowId: 1,
-      source: { type: 'github-prs', preset: 'review-requested' },
+      live: {
+        source: { type: 'github-prs', preset: 'review-requested' },
+        refreshIntervalMin: 0,
+      },
     })
 
-    let fetchSeq = 0
-    const fakeFetch = vi.fn(async () => {
-      fetchSeq++
-      if (fetchSeq === 1) return searchResponse([{ repo: 'a/b', number: 1 }, { repo: 'a/b', number: 2 }])
-      return searchResponse([{ repo: 'a/b', number: 1 }])
-    })
-
-    await syncLiveSpace(space.id, fakeFetch as unknown as typeof fetch)
-    await syncLiveSpace(space.id, fakeFetch as unknown as typeof fetch)
-
-    const final = await getSpace(space.id)
-    if (final && isLive(final)) {
-      expect(final.managedTabs.map((t) => t.externalId)).toEqual(['a/b#1'])
-    }
-    const liveTabs = [...mock.tabs.values()].filter((t) => t.groupId === space.groupId)
-    expect(liveTabs).toHaveLength(1)
-  })
-
-  it('records the error when no token is configured', async () => {
-    const space = await createLiveSpace({
-      name: 'NoToken',
-      color: 'red',
-      windowId: 1,
-      source: { type: 'github-prs', preset: 'assigned' },
-    })
-    await syncLiveSpace(space.id)
-    const after = await getSpace(space.id)
-    if (after && isLive(after)) {
-      expect(after.lastSyncError).toMatch(/token/i)
-    }
-  })
-
-  it('keeps newly synced live tabs in the live group even when a static space is active', async () => {
-    // Reproduces the bug: user is on a static Space, then creates a Live
-    // folder. The popup does not switch active, so the static Space stays
-    // active. Without auto-grouping protection in applyDiff, the
-    // chrome.tabs.onCreated handler poaches each new live tab into the
-    // active static group before applyDiff's chrome.tabs.group call lands.
-    await setGitHubToken('ghp_test')
-    const staticSpace = await createStaticSpace({ name: 'Work', color: 'red', windowId: 1 })
-    await switchTo(staticSpace.id, 1)
-
-    const liveSpace = await createLiveSpace({
-      name: 'Reviews',
-      color: 'blue',
-      windowId: 1,
-      source: { type: 'github-prs', preset: 'review-requested' },
-    })
-
-    // Real chrome would dispatch onTabCreated as a side effect of tabs.create.
-    // Our mock doesn't, so we wire up the handler manually around the sync
-    // so the test catches a regression where applyDiff stops protecting
-    // against auto-grouping.
-    const originalCreate = chrome.tabs.create
+    // Reproduce the chrome.tabs.onCreated → registerTab race that previously
+    // double-claimed each new tab into the active Space's root folder.
+    const original = chrome.tabs.create
     chrome.tabs.create = (async (props: chrome.tabs.CreateProperties) => {
-      const tab = await originalCreate(props)
-      // Fire onTabCreated synchronously like Chrome would (and like
-      // background/index.ts's listener does).
+      const tab = await original(props)
       void onTabCreated(tab)
       return tab
     }) as typeof chrome.tabs.create
 
     const fakeFetch = vi.fn(async () =>
-      searchResponse([{ repo: 'octo/repo', number: 1 }, { repo: 'octo/repo', number: 2 }]),
+      searchResponse([{ repo: 'a/b', number: 1 }, { repo: 'a/b', number: 2 }]),
     )
-    await syncLiveSpace(liveSpace.id, fakeFetch as unknown as typeof fetch)
+    await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
 
-    chrome.tabs.create = originalCreate
+    chrome.tabs.create = original
 
-    const updated = await getSpace(liveSpace.id)
-    if (!updated || !isLive(updated)) throw new Error('expected live space')
-    for (const m of updated.managedTabs) {
-      const tab = mock.tabs.get(m.tabId)
-      expect(tab?.groupId).toBe(liveSpace.groupId)
+    const store = await loadStore()
+    const liveFolder = store.folders[live.id]!
+    const root = store.folders[space.rootFolderId]!
+
+    expect(liveFolder.items.map((it) => (it.kind === 'tab' ? it.tabId : null))).toEqual(
+      liveFolder.live!.managedTabs.map((m) => m.tabId),
+    )
+    // Each synced tab should appear in the Live folder ONLY, not also in
+    // the Space root.
+    for (const m of liveFolder.live!.managedTabs) {
+      expect(root.items.some((it) => it.kind === 'tab' && it.tabId === m.tabId)).toBe(false)
     }
-    // Static space group must not have absorbed the live tabs.
-    const staticGroupTabs = [...mock.tabs.values()].filter(
-      (t) => t.groupId === staticSpace.groupId,
-    )
-    expect(staticGroupTabs).toHaveLength(1) // just the static space's own starter
   })
 
   it('records GitHub errors from the API', async () => {
     await setGitHubToken('bad')
-    const space = await createLiveSpace({
+    const space = await createSpace({ name: 'X', color: 'red', windowId: 1 })
+    const live = await createFolder({
+      parentFolderId: space.rootFolderId,
       name: 'Bad',
-      color: 'grey',
-      windowId: 1,
-      source: { type: 'github-prs', preset: 'authored' },
+      live: {
+        source: { type: 'github-prs', preset: 'authored' },
+        refreshIntervalMin: 0,
+      },
     })
-    const fakeFetch = vi.fn(async () => new Response('Bad credentials', { status: 401 }))
-    await syncLiveSpace(space.id, fakeFetch as unknown as typeof fetch)
-    const after = await getSpace(space.id)
-    if (after && isLive(after)) {
-      expect(after.lastSyncError).toMatch(/401/)
-    }
+    const fakeFetch = vi.fn(
+      async () => new Response('Bad credentials', { status: 401 }),
+    )
+    await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
+    const after = (await loadStore()).folders[live.id]
+    expect(after?.live?.lastSyncError).toMatch(/401/)
+  })
+
+  it('removes managed tabs that disappeared from the result set', async () => {
+    await setGitHubToken('ghp_test')
+    const space = await createSpace({ name: 'S', color: 'red', windowId: 1 })
+    const live = await createFolder({
+      parentFolderId: space.rootFolderId,
+      name: 'Reviews',
+      live: {
+        source: { type: 'github-prs', preset: 'review-requested' },
+        refreshIntervalMin: 0,
+      },
+    })
+
+    let seq = 0
+    const fakeFetch = vi.fn(async () => {
+      seq++
+      return seq === 1
+        ? searchResponse([{ repo: 'a/b', number: 1 }, { repo: 'a/b', number: 2 }])
+        : searchResponse([{ repo: 'a/b', number: 1 }])
+    })
+    await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
+    await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
+
+    const final = (await loadStore()).folders[live.id]
+    expect(final?.live?.managedTabs.map((m) => m.externalId)).toEqual(['a/b#1'])
+    // Mock state: the second tab should be removed.
+    const surviving = [...mock.tabs.values()]
+    expect(surviving).toHaveLength(1)
   })
 })

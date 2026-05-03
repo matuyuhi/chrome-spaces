@@ -1,4 +1,12 @@
-import { listSpaces, switchTo, createStaticSpace, resetTabToBase } from './space-manager'
+import {
+  createSpace,
+  listSpaces,
+  resetTabToBase,
+  switchTo,
+  walkFolders,
+} from './space-manager'
+import { syncLiveFolder } from './live/sync-engine'
+import { loadStore } from './storage'
 import { type SpaceColor } from '../shared/types'
 
 const SPACE_COLORS: SpaceColor[] = [
@@ -20,7 +28,7 @@ function pickNextColor(index: number): SpaceColor {
 export async function handleCommand(command: string, windowId: number): Promise<void> {
   if (command === 'new-space') {
     const existing = await listSpaces(windowId)
-    await createStaticSpace({
+    await createSpace({
       name: `Space ${existing.length + 1}`,
       color: pickNextColor(existing.length),
       windowId,
@@ -31,6 +39,21 @@ export async function handleCommand(command: string, windowId: number): Promise<
   if (command === 'reset-current-tab') {
     const [activeTab] = await chrome.tabs.query({ windowId, active: true })
     if (typeof activeTab?.id === 'number') await resetTabToBase(activeTab.id)
+    return
+  }
+
+  if (command === 'sync-current-live') {
+    const [activeTab] = await chrome.tabs.query({ windowId, active: true })
+    if (typeof activeTab?.id !== 'number') return
+    const store = await loadStore()
+    for (const sp of Object.values(store.spaces)) {
+      for (const folder of walkFolders(store, sp.rootFolderId)) {
+        if (folder.live?.managedTabs.some((m) => m.tabId === activeTab.id)) {
+          await syncLiveFolder(folder.id)
+          return
+        }
+      }
+    }
     return
   }
 
@@ -49,10 +72,6 @@ export async function resolveWindowId(tab?: chrome.tabs.Tab): Promise<number | u
     const win = await chrome.windows.getCurrent()
     return typeof win.id === 'number' ? win.id : undefined
   } catch {
-    // chrome.windows.getCurrent rejects with "No current window" when the
-    // service worker fires before any browser window has been focused
-    // (e.g., commands triggered while Chrome is reopening). Bail rather
-    // than tear down the surrounding void IIFE.
     return undefined
   }
 }

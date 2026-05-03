@@ -1,35 +1,25 @@
-export type SpaceId = string
+// Schema v2: Arc-style. A Space owns a tree of Folders; each Folder owns
+// an ordered list of items (tabs or sub-folders). Tabs are tracked by
+// their Chrome tabId; we no longer use chrome.tabGroups for grouping at
+// all. Switching a Space hides every other window-tab and shows this
+// Space's tabs (chrome.tabs.hide / show).
 
+export type SpaceId = string
+export type FolderId = string
+
+// Reused from chrome.tabGroups for the value enum, but no Tab Group is
+// actually created — this is just our color palette.
 export type SpaceColor = chrome.tabGroups.ColorEnum
 
-export interface BaseSpace {
-  id: SpaceId
-  name: string
-  color: SpaceColor
-  emoji?: string
-  groupId: number
-  windowId: number
-  order: number
-  lastActiveTabId?: number
-  createdAt: number
-  lastAccessedAt: number
-  // Map of tabId → base URL. Pressing the reset trigger snaps the tab back
-  // to its base URL (Arc's pinned-tab "snap-back"). For LiveSpace tabs the
-  // managedTab.url takes precedence — see space-manager.resolveBaseUrl.
-  pinnedTabs?: Record<number, string>
-}
-
-export interface StaticSpace extends BaseSpace {
-  kind: 'static'
+export interface ManagedTab {
+  externalId: string
+  url: string
+  tabId: number
+  addedAt: number
 }
 
 export type GitHubPreset = 'review-requested' | 'assigned' | 'authored' | 'custom'
 
-// `repoFilter` narrows a preset query to a GitHub org / user / single repo.
-// Empty or "*" means no narrowing (everything the token can see). A bare
-// identifier ("acme") is interpreted as `org:acme`. A value already shaped
-// like a search qualifier (`org:acme`, `user:octocat`, `repo:foo/bar`) is
-// used verbatim, so power users can mix qualifiers.
 export type LiveSource =
   | {
       type: 'github-prs'
@@ -46,33 +36,64 @@ export type LiveSource =
     }
   | { type: 'github-issues'; preset: 'custom'; query: string }
 
-export interface ManagedTab {
-  externalId: string
-  url: string
-  tabId: number
-  addedAt: number
-}
-
-export interface LiveSpace extends BaseSpace {
-  kind: 'live'
+export interface LiveConfig {
   source: LiveSource
-  refreshIntervalMin: number
+  refreshIntervalMin: number // 0 = manual only
+  managedTabs: ManagedTab[]
+  // Anchor tab created when the Live folder is empty so the folder is
+  // discoverable in the strip; cleared once managedTabs becomes non-empty.
+  starterTabId?: number
   lastSyncAt?: number
   lastSyncError?: string
-  managedTabs: ManagedTab[]
-  // Seed tab created by createLiveSpace to anchor the Tab Group.
-  // Cleaned up once managedTabs becomes non-empty.
-  starterTabId?: number
 }
 
-export type Space = StaticSpace | LiveSpace
+// An item inside a Folder: either a tracked tab (by tabId) or a nested
+// Folder reference. The tab/folder records themselves live in
+// SpaceStore.folders / SpaceStore.tabs so refs can move between parents
+// without rewriting the heavy fields.
+export type ItemRef =
+  | { kind: 'tab'; tabId: number }
+  | { kind: 'folder'; folderId: FolderId }
 
-export const CURRENT_SCHEMA_VERSION = 1
+export interface TabRecord {
+  // tabId doubles as the record id — Chrome guarantees uniqueness for
+  // the lifetime of the tab, which matches our retention.
+  tabId: number
+  windowId: number
+  // Optional snap-back URL (Arc's pinned tab base URL).
+  baseUrl?: string
+}
 
-export const TAB_GROUP_ID_NONE = -1
+export interface Folder {
+  id: FolderId
+  name: string
+  emoji?: string
+  color?: SpaceColor
+  collapsed: boolean
+  items: ItemRef[]
+  // Set on Live folders. Folders without `live` are plain user folders.
+  live?: LiveConfig
+}
+
+export interface Space {
+  id: SpaceId
+  name: string
+  color: SpaceColor
+  emoji?: string
+  windowId: number
+  order: number
+  rootFolderId: FolderId
+  lastActiveTabId?: number
+  createdAt: number
+  lastAccessedAt: number
+}
+
+export const CURRENT_SCHEMA_VERSION = 2
 
 export interface SpaceStore {
   spaces: Record<SpaceId, Space>
+  folders: Record<FolderId, Folder>
+  tabs: Record<number, TabRecord>
   activeSpaceByWindow: Record<number, SpaceId>
   schemaVersion: number
 }
@@ -84,15 +105,52 @@ export interface SecretStore {
 export function emptyStore(): SpaceStore {
   return {
     spaces: {},
+    folders: {},
+    tabs: {},
     activeSpaceByWindow: {},
     schemaVersion: CURRENT_SCHEMA_VERSION,
   }
 }
 
-export function isLive(space: Space): space is LiveSpace {
-  return space.kind === 'live'
+// ---- Helpers ---------------------------------------------------------
+
+export function isLiveFolder(folder: Folder): folder is Folder & { live: LiveConfig } {
+  return folder.live !== undefined
 }
 
-export function isStatic(space: Space): space is StaticSpace {
-  return space.kind === 'static'
+// Walk every Folder reachable from `rootFolderId`, including the root.
+export function* walkFolders(
+  store: SpaceStore,
+  rootFolderId: FolderId,
+): Generator<Folder> {
+  const root = store.folders[rootFolderId]
+  if (!root) return
+  yield root
+  for (const item of root.items) {
+    if (item.kind === 'folder') yield* walkFolders(store, item.folderId)
+  }
+}
+
+// Collect every tabId reachable from a Space's root, depth-first.
+export function collectSpaceTabIds(store: SpaceStore, spaceId: SpaceId): number[] {
+  const space = store.spaces[spaceId]
+  if (!space) return []
+  const ids: number[] = []
+  for (const folder of walkFolders(store, space.rootFolderId)) {
+    for (const item of folder.items) {
+      if (item.kind === 'tab') ids.push(item.tabId)
+    }
+  }
+  return ids
+}
+
+export function findContainingFolder(
+  store: SpaceStore,
+  rootFolderId: FolderId,
+  tabId: number,
+): Folder | undefined {
+  for (const folder of walkFolders(store, rootFolderId)) {
+    if (folder.items.some((i) => i.kind === 'tab' && i.tabId === tabId)) return folder
+  }
+  return undefined
 }

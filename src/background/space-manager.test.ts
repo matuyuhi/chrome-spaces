@@ -1,281 +1,253 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  createLiveSpace,
-  createStaticSpace,
-  createStaticSpaceFromTabs,
-  dropPinForTab,
-  switchTo,
-  listSpaces,
+  createFolder,
+  createSpace,
+  deleteFolder,
   deleteSpace,
+  dropTab,
+  getActiveSpace,
+  listSpaces,
+  moveItem,
   pinTab,
-  reconcilePinnedTabs,
-  renameSpace,
+  registerTab,
   resetTabToBase,
   resolveBaseUrl,
-  setSpaceColor,
-  findSpaceByGroupId,
-  reorderSpaces,
-  getActiveSpace,
+  switchTo,
   unpinTab,
-  updateLiveSpace,
+  updateLiveFolder,
 } from './space-manager'
-import { isLive } from '../shared/types'
-import { updateStore } from './storage'
+import { loadStore } from './storage'
 import { setupChromeMock, type ChromeMock } from './test-utils'
 
-describe('space-manager', () => {
+describe('space-manager (v2)', () => {
   let mock: ChromeMock
 
   beforeEach(() => {
     mock = setupChromeMock()
   })
 
-  it('creates a static space backed by a Tab Group with a starter tab', async () => {
-    const space = await createStaticSpace({ name: 'Work', color: 'blue', windowId: 1 })
+  it('createSpace creates an empty Space with a root folder', async () => {
+    const space = await createSpace({ name: 'Work', color: 'blue', windowId: 1 })
     expect(space.name).toBe('Work')
-    expect(space.kind).toBe('static')
-    expect(mock.groups.get(space.groupId)?.title).toBe('Work')
-    expect(mock.groups.get(space.groupId)?.color).toBe('blue')
-    const groupTabs = [...mock.tabs.values()].filter((t) => t.groupId === space.groupId)
-    expect(groupTabs).toHaveLength(1)
+    const store = await loadStore()
+    expect(store.folders[space.rootFolderId]?.items).toEqual([])
   })
 
-  it('orders spaces by creation order in the same window', async () => {
-    const a = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const b = await createStaticSpace({ name: 'B', color: 'blue', windowId: 1 })
-    const c = await createStaticSpace({ name: 'C', color: 'green', windowId: 1 })
-    const list = await listSpaces(1)
-    expect(list.map((s) => s.id)).toEqual([a.id, b.id, c.id])
+  it('createSpace can adopt existing tab ids into the root folder', async () => {
+    const t1 = await chrome.tabs.create({ windowId: 1 })
+    const t2 = await chrome.tabs.create({ windowId: 1 })
+    const space = await createSpace({
+      name: 'Adopt',
+      color: 'red',
+      windowId: 1,
+      initialTabIds: [t1.id!, t2.id!],
+    })
+    const store = await loadStore()
+    const root = store.folders[space.rootFolderId]
+    expect(root?.items).toEqual([
+      { kind: 'tab', tabId: t1.id! },
+      { kind: 'tab', tabId: t2.id! },
+    ])
+    expect(store.tabs[t1.id!]).toBeDefined()
+    expect(store.tabs[t2.id!]).toBeDefined()
   })
 
-  it('switchTo collapses other groups and expands target', async () => {
-    const a = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const b = await createStaticSpace({ name: 'B', color: 'blue', windowId: 1 })
-    await switchTo(a.id)
-    expect(mock.groups.get(a.groupId)?.collapsed).toBe(false)
-    expect(mock.groups.get(b.groupId)?.collapsed).toBe(true)
-    await switchTo(b.id)
-    expect(mock.groups.get(a.groupId)?.collapsed).toBe(true)
-    expect(mock.groups.get(b.groupId)?.collapsed).toBe(false)
-    expect((await getActiveSpace(1))?.id).toBe(b.id)
+  it('registerTab appends new tabs to the active Space', async () => {
+    const space = await createSpace({ name: 'Active', color: 'blue', windowId: 1 })
+    await switchTo(space.id, 1) // makes it active
+    const tab = await chrome.tabs.create({ windowId: 1 })
+    await registerTab(tab)
+    const store = await loadStore()
+    const root = store.folders[space.rootFolderId]
+    expect(root?.items.some((it) => it.kind === 'tab' && it.tabId === tab.id)).toBe(true)
   })
 
-  it('switchTo only affects the target window', async () => {
-    const win1 = await createStaticSpace({ name: 'W1', color: 'red', windowId: 1 })
-    const win2 = await createStaticSpace({ name: 'W2', color: 'blue', windowId: 2 })
-    await switchTo(win1.id)
-    expect(mock.groups.get(win2.groupId)?.collapsed).toBe(false)
+  it('switchTo hides other Spaces tabs and shows the target tabs', async () => {
+    const a = await createSpace({ name: 'A', color: 'red', windowId: 1 })
+    const t1 = await chrome.tabs.create({ windowId: 1 })
+    await registerTab(t1)
+    await switchTo(a.id, 1)
+
+    const b = await createSpace({ name: 'B', color: 'blue', windowId: 1 })
+    // Switch to B: A's tabs should hide; B has none so a starter tab is created.
+    await switchTo(b.id, 1)
+    expect(mock.tabs.get(t1.id!)?.hidden).toBe(true)
   })
 
-  it('rename updates store and tab group title', async () => {
-    const s = await createStaticSpace({ name: 'Old', color: 'red', windowId: 1 })
-    await renameSpace(s.id, 'New')
-    expect(mock.groups.get(s.groupId)?.title).toBe('New')
-    const list = await listSpaces(1)
-    expect(list[0]?.name).toBe('New')
-  })
-
-  it('setSpaceColor updates store and tab group color', async () => {
-    const s = await createStaticSpace({ name: 'X', color: 'red', windowId: 1 })
-    await setSpaceColor(s.id, 'cyan')
-    expect(mock.groups.get(s.groupId)?.color).toBe('cyan')
-  })
-
-  it('deleteSpace removes the space and (optionally) its tabs', async () => {
-    const s = await createStaticSpace({ name: 'Doomed', color: 'grey', windowId: 1 })
-    const groupId = s.groupId
-    expect([...mock.tabs.values()].filter((t) => t.groupId === groupId)).toHaveLength(1)
-    await deleteSpace(s.id, { closeTabs: true })
-    expect([...mock.tabs.values()].filter((t) => t.groupId === groupId)).toHaveLength(0)
+  it('deleteSpace optionally closes its tabs', async () => {
+    const t1 = await chrome.tabs.create({ windowId: 1 })
+    const space = await createSpace({
+      name: 'Doomed',
+      color: 'grey',
+      windowId: 1,
+      initialTabIds: [t1.id!],
+    })
+    await deleteSpace(space.id, { closeTabs: true })
+    expect(mock.tabs.has(t1.id!)).toBe(false)
     expect(await listSpaces(1)).toHaveLength(0)
   })
 
-  it('findSpaceByGroupId resolves the right space', async () => {
-    const a = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const b = await createStaticSpace({ name: 'B', color: 'blue', windowId: 1 })
-    expect((await findSpaceByGroupId(a.groupId))?.id).toBe(a.id)
-    expect((await findSpaceByGroupId(b.groupId))?.id).toBe(b.id)
+  it('createFolder appends a new folder under a parent', async () => {
+    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    const f = await createFolder({ parentFolderId: space.rootFolderId, name: 'Sub' })
+    const store = await loadStore()
+    expect(store.folders[f.id]).toBeDefined()
+    expect(store.folders[space.rootFolderId]?.items).toEqual([
+      { kind: 'folder', folderId: f.id },
+    ])
   })
 
-  it('reorderSpaces persists the new order', async () => {
-    const a = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const b = await createStaticSpace({ name: 'B', color: 'blue', windowId: 1 })
-    const c = await createStaticSpace({ name: 'C', color: 'green', windowId: 1 })
-    await reorderSpaces(1, [c.id, a.id, b.id])
-    const list = await listSpaces(1)
-    expect(list.map((s) => s.id)).toEqual([c.id, a.id, b.id])
-  })
-
-  it('createStaticSpaceFromTabs groups every ungrouped tab in the window', async () => {
-    const t1 = await chrome.tabs.create({ windowId: 1 })
-    const t2 = await chrome.tabs.create({ windowId: 1 })
-    const t3 = await chrome.tabs.create({ windowId: 1 })
-    // A tab in another window should not be captured.
-    const otherWin = await chrome.tabs.create({ windowId: 2 })
-
-    const space = await createStaticSpaceFromTabs({
-      name: 'Captured',
-      color: 'cyan',
-      windowId: 1,
-    })
-
-    expect(space.kind).toBe('static')
-    expect(mock.tabs.get(t1.id!)?.groupId).toBe(space.groupId)
-    expect(mock.tabs.get(t2.id!)?.groupId).toBe(space.groupId)
-    expect(mock.tabs.get(t3.id!)?.groupId).toBe(space.groupId)
-    expect(mock.tabs.get(otherWin.id!)?.groupId).toBe(-1)
-    expect(mock.groups.get(space.groupId)?.title).toBe('Captured')
-  })
-
-  it('createStaticSpaceFromTabs throws when no ungrouped tabs exist', async () => {
-    // Pre-grouped tab + same-window's only-grouped state
-    const t = await chrome.tabs.create({ windowId: 1 })
-    await chrome.tabs.group({ createProperties: { windowId: 1 }, tabIds: [t.id!] })
-
-    await expect(
-      createStaticSpaceFromTabs({ name: 'X', color: 'blue', windowId: 1 }),
-    ).rejects.toThrow('No ungrouped tabs')
-  })
-
-  it('pinTab persists base URL on the tab\'s Space', async () => {
-    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const tab = await chrome.tabs.create({ windowId: 1 })
-    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
-    await pinTab(tab.id!, 'https://example.com/home')
-    const stored = (await listSpaces(1))[0]
-    expect(stored?.pinnedTabs?.[tab.id!]).toBe('https://example.com/home')
-  })
-
-  it('resolveBaseUrl prefers managedTab.url over pinnedTabs', async () => {
-    const live = await createLiveSpace({
+  it('createFolder with live config schedules an alarm when interval > 0', async () => {
+    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    const f = await createFolder({
+      parentFolderId: space.rootFolderId,
       name: 'PRs',
-      color: 'blue',
-      windowId: 1,
-      source: { type: 'github-prs', preset: 'review-requested' },
-      refreshIntervalMin: 5,
+      live: {
+        source: { type: 'github-prs', preset: 'review-requested' },
+        refreshIntervalMin: 5,
+      },
     })
-    // Inject a managed tab manually (bypassing sync) for the test.
-    const managedTabId = 999
-    await updateStore((s) => {
-      const sp = s.spaces[live.id]
-      if (sp && sp.kind === 'live') {
-        sp.managedTabs = [
-          {
-            externalId: 'a/b#1',
-            url: 'https://github.com/a/b/pull/1',
-            tabId: managedTabId,
-            addedAt: 0,
-          },
-        ]
-        sp.pinnedTabs = { [managedTabId]: 'https://example.com/override' }
-      }
+    expect(mock.alarms.has(`live-folder:${f.id}`)).toBe(true)
+  })
+
+  it('createFolder with refreshIntervalMin = 0 does not schedule an alarm', async () => {
+    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    const f = await createFolder({
+      parentFolderId: space.rootFolderId,
+      name: 'PRs manual',
+      live: {
+        source: { type: 'github-prs', preset: 'authored' },
+        refreshIntervalMin: 0,
+      },
     })
-    expect(await resolveBaseUrl(managedTabId)).toBe('https://github.com/a/b/pull/1')
+    expect(mock.alarms.has(`live-folder:${f.id}`)).toBe(false)
   })
 
-  it('resetTabToBase navigates the tab back to its base URL', async () => {
-    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const tab = await chrome.tabs.create({ windowId: 1, url: 'https://example.com/page' })
-    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
-    await pinTab(tab.id!, 'https://example.com/home')
-    // Simulate the user navigating away.
-    await chrome.tabs.update(tab.id!, { url: 'https://example.com/page/deep' })
-    const ok = await resetTabToBase(tab.id!)
-    expect(ok).toBe(true)
-    expect(mock.tabs.get(tab.id!)?.url).toBe('https://example.com/home')
+  it('updateLiveFolder re-schedules when the interval changes', async () => {
+    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    const f = await createFolder({
+      parentFolderId: space.rootFolderId,
+      name: 'L',
+      live: {
+        source: { type: 'github-prs', preset: 'review-requested' },
+        refreshIntervalMin: 5,
+      },
+    })
+    await updateLiveFolder(f.id, { refreshIntervalMin: 10 })
+    expect(mock.alarms.get(`live-folder:${f.id}`)?.periodInMinutes).toBe(10)
   })
 
-  it('resetTabToBase returns false when no base URL is known', async () => {
-    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const tab = await chrome.tabs.create({ windowId: 1 })
-    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
-    expect(await resetTabToBase(tab.id!)).toBe(false)
+  it('deleteFolder refuses to remove a Space root', async () => {
+    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    await expect(
+      deleteFolder(space.rootFolderId, { closeTabs: false }),
+    ).rejects.toThrow(/root folder/)
   })
 
-  it('unpinTab removes the entry and clears the field when empty', async () => {
-    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const tab = await chrome.tabs.create({ windowId: 1 })
-    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
-    await pinTab(tab.id!, 'https://example.com/home')
-    await unpinTab(tab.id!)
-    expect((await listSpaces(1))[0]?.pinnedTabs).toBeUndefined()
-  })
-
-  it('dropPinForTab handles an already-unpinned tab without writes', async () => {
-    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const tab = await chrome.tabs.create({ windowId: 1 })
-    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
-    await dropPinForTab(tab.id!) // no-op, must not throw
-    expect((await listSpaces(1))[0]?.pinnedTabs).toBeUndefined()
-  })
-
-  it('reconcilePinnedTabs drops entries for tabs that no longer exist', async () => {
-    const space = await createStaticSpace({ name: 'A', color: 'red', windowId: 1 })
-    const tab = await chrome.tabs.create({ windowId: 1 })
-    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
-    await pinTab(tab.id!, 'https://example.com/home')
-    // Pretend the tab vanished without firing onRemoved.
-    mock.tabs.delete(tab.id!)
-    await reconcilePinnedTabs()
-    expect((await listSpaces(1))[0]?.pinnedTabs).toBeUndefined()
-  })
-
-  it('switchTo rehydrates a Space whose Tab Group was removed externally', async () => {
-    const space = await createStaticSpace({ name: 'Work', color: 'green', windowId: 1 })
-    const oldGroupId = space.groupId
-
-    // Simulate the user closing the Tab Group from Chrome's UI: tabs.onRemoved
-    // fires for every tab in the group, then tabGroups.onRemoved fires.
-    // Our handler marks groupId = TAB_GROUP_ID_NONE.
-    await import('./handlers').then(({ onTabGroupRemoved }) =>
-      onTabGroupRemoved({ id: oldGroupId, windowId: 1 } as chrome.tabGroups.TabGroup),
-    )
-    expect((await listSpaces(1))[0]?.groupId).toBe(-1)
-
+  it('moveItem rejects dropping into a Live folder', async () => {
+    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    const t = await chrome.tabs.create({ windowId: 1 })
+    await registerTab(t)
     await switchTo(space.id, 1)
-
-    const revived = (await listSpaces(1))[0]
-    expect(revived?.groupId).not.toBe(-1)
-    expect(revived?.groupId).not.toBe(oldGroupId)
-    expect(mock.groups.get(revived!.groupId)?.title).toBe('Work')
-    expect(mock.groups.get(revived!.groupId)?.color).toBe('green')
+    const live = await createFolder({
+      parentFolderId: space.rootFolderId,
+      name: 'PRs',
+      live: {
+        source: { type: 'github-prs', preset: 'review-requested' },
+        refreshIntervalMin: 0,
+      },
+    })
+    const before = await loadStore()
+    const beforeRoot = before.folders[space.rootFolderId]?.items
+    await moveItem({
+      item: { kind: 'tab', tabId: t.id! },
+      toFolderId: live.id,
+      toIndex: 0,
+    })
+    const after = await loadStore()
+    // Live folder still empty, tab still in root.
+    expect(after.folders[live.id]?.items).toEqual([])
+    expect(after.folders[space.rootFolderId]?.items).toEqual(beforeRoot)
   })
 
-  it('rehydrate clears pinnedTabs that referenced the dead group', async () => {
-    const space = await createStaticSpace({ name: 'Work', color: 'green', windowId: 1 })
-    const tab = await chrome.tabs.create({ windowId: 1, url: 'https://example.com/' })
-    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
-    await pinTab(tab.id!, 'https://example.com/home')
-    expect((await listSpaces(1))[0]?.pinnedTabs?.[tab.id!]).toBe('https://example.com/home')
-
-    await import('./handlers').then(({ onTabGroupRemoved }) =>
-      onTabGroupRemoved({ id: space.groupId, windowId: 1 } as chrome.tabGroups.TabGroup),
-    )
-    await switchTo(space.id, 1)
-    expect((await listSpaces(1))[0]?.pinnedTabs).toBeUndefined()
+  it('moveItem rejects moving a folder into its own descendant', async () => {
+    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    const outer = await createFolder({
+      parentFolderId: space.rootFolderId,
+      name: 'Outer',
+    })
+    const inner = await createFolder({ parentFolderId: outer.id, name: 'Inner' })
+    await moveItem({
+      item: { kind: 'folder', folderId: outer.id },
+      toFolderId: inner.id,
+      toIndex: 0,
+    })
+    const store = await loadStore()
+    // Outer should still be in space root, inner still in outer.
+    expect(
+      store.folders[space.rootFolderId]?.items.some(
+        (it) => it.kind === 'folder' && it.folderId === outer.id,
+      ),
+    ).toBe(true)
+    expect(
+      store.folders[outer.id]?.items.some(
+        (it) => it.kind === 'folder' && it.folderId === inner.id,
+      ),
+    ).toBe(true)
   })
 
-  it('updateLiveSpace replaces source and re-schedules on interval change', async () => {
-    const live = await createLiveSpace({
-      name: 'Reviews',
-      color: 'blue',
+  it('moveItem moves a tab between folders', async () => {
+    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    const t = await chrome.tabs.create({ windowId: 1 })
+    await registerTab(t)
+    await switchTo(space.id, 1) // makes it active so registerTab places it in root
+    const f = await createFolder({ parentFolderId: space.rootFolderId, name: 'Sub' })
+    await moveItem({
+      item: { kind: 'tab', tabId: t.id! },
+      toFolderId: f.id,
+      toIndex: 0,
+    })
+    const store = await loadStore()
+    expect(store.folders[f.id]?.items).toEqual([{ kind: 'tab', tabId: t.id! }])
+    expect(
+      store.folders[space.rootFolderId]?.items.some(
+        (i) => i.kind === 'tab' && i.tabId === t.id!,
+      ),
+    ).toBe(false)
+  })
+
+  it('pinTab / resetTabToBase work for a tracked tab', async () => {
+    const t = await chrome.tabs.create({ windowId: 1, url: 'https://example.com/a' })
+    await registerTab(t)
+    await pinTab(t.id!, 'https://example.com/home')
+    expect(await resolveBaseUrl(t.id!)).toBe('https://example.com/home')
+    await chrome.tabs.update(t.id!, { url: 'https://example.com/deep' })
+    await resetTabToBase(t.id!)
+    expect(mock.tabs.get(t.id!)?.url).toBe('https://example.com/home')
+    await unpinTab(t.id!)
+    expect(await resolveBaseUrl(t.id!)).toBeUndefined()
+  })
+
+  it('dropTab removes the tab from every folder and the tabs map', async () => {
+    const t = await chrome.tabs.create({ windowId: 1 })
+    const space = await createSpace({
+      name: 'X',
+      color: 'red',
       windowId: 1,
-      source: { type: 'github-prs', preset: 'review-requested' },
-      refreshIntervalMin: 5,
+      initialTabIds: [t.id!],
     })
-    await updateLiveSpace(live.id, {
-      source: { type: 'github-prs', preset: 'custom', query: 'is:pr is:open org:foo' },
-      refreshIntervalMin: 15,
-    })
-    const updated = (await listSpaces(1))[0]
-    if (!updated || !isLive(updated)) throw new Error('expected live space')
-    expect(updated.refreshIntervalMin).toBe(15)
-    expect(updated.source).toEqual({
-      type: 'github-prs',
-      preset: 'custom',
-      query: 'is:pr is:open org:foo',
-    })
-    const alarm = mock.alarms.get(`live-space:${live.id}`)
-    expect(alarm?.periodInMinutes).toBe(15)
+    await dropTab(t.id!)
+    const store = await loadStore()
+    expect(store.tabs[t.id!]).toBeUndefined()
+    expect(store.folders[space.rootFolderId]?.items).toEqual([])
+  })
+
+  it('getActiveSpace tracks switchTo', async () => {
+    const a = await createSpace({ name: 'A', color: 'red', windowId: 1 })
+    const b = await createSpace({ name: 'B', color: 'blue', windowId: 1 })
+    await switchTo(a.id, 1)
+    expect((await getActiveSpace(1))?.id).toBe(a.id)
+    await switchTo(b.id, 1)
+    expect((await getActiveSpace(1))?.id).toBe(b.id)
   })
 })

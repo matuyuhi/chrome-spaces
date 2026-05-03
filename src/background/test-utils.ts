@@ -1,7 +1,9 @@
 import { vi } from 'vitest'
 
 interface MockArea {
-  get: (keys?: string | string[] | Record<string, unknown> | null) => Promise<Record<string, unknown>>
+  get: (
+    keys?: string | string[] | Record<string, unknown> | null,
+  ) => Promise<Record<string, unknown>>
   set: (items: Record<string, unknown>) => Promise<void>
   remove: (keys: string | string[]) => Promise<void>
   clear: () => Promise<void>
@@ -41,22 +43,14 @@ interface FakeTab {
   windowId: number
   groupId: number
   active: boolean
+  hidden: boolean
   url?: string
-}
-
-interface FakeGroup {
-  id: number
-  windowId: number
-  title?: string
-  color?: string
-  collapsed: boolean
 }
 
 export interface ChromeMock {
   sync: Record<string, unknown>
   local: Record<string, unknown>
   tabs: Map<number, FakeTab>
-  groups: Map<number, FakeGroup>
   alarms: Map<string, { name: string; periodInMinutes?: number }>
   contextMenuItems: Map<string, { id: string; title: string }>
 }
@@ -65,9 +59,7 @@ export function setupChromeMock(): ChromeMock {
   const sync: Record<string, unknown> = {}
   const local: Record<string, unknown> = {}
   const tabs = new Map<number, FakeTab>()
-  const groups = new Map<number, FakeGroup>()
   let nextTabId = 1
-  let nextGroupId = 1
 
   const tabsApi = {
     create: vi.fn(async (props: chrome.tabs.CreateProperties) => {
@@ -77,39 +69,18 @@ export function setupChromeMock(): ChromeMock {
         windowId: props.windowId ?? 1,
         groupId: -1,
         active: props.active ?? false,
+        hidden: false,
         url: props.url,
       }
       tabs.set(id, tab)
       return tab as unknown as chrome.tabs.Tab
     }),
-    group: vi.fn(
-      async (opts: {
-        tabIds: number[]
-        groupId?: number
-        createProperties?: { windowId?: number }
-      }) => {
-        let gid: number
-        if (typeof opts.groupId === 'number') {
-          gid = opts.groupId
-          if (!groups.has(gid)) throw new Error(`No group ${gid}`)
-        } else {
-          gid = nextGroupId++
-          const wId = opts.createProperties?.windowId ?? 1
-          groups.set(gid, { id: gid, windowId: wId, collapsed: false })
-        }
-        for (const tid of opts.tabIds) {
-          const t = tabs.get(tid)
-          if (t) t.groupId = gid
-        }
-        return gid
-      },
-    ),
     query: vi.fn(async (q: chrome.tabs.QueryInfo) => {
       const result: FakeTab[] = []
       for (const t of tabs.values()) {
-        if (q.groupId !== undefined && t.groupId !== q.groupId) continue
         if (q.windowId !== undefined && t.windowId !== q.windowId) continue
         if (q.active !== undefined && t.active !== q.active) continue
+        if (q.groupId !== undefined && t.groupId !== q.groupId) continue
         result.push(t)
       }
       return result as unknown as chrome.tabs.Tab[]
@@ -120,6 +91,7 @@ export function setupChromeMock(): ChromeMock {
       if (props.active === true) {
         for (const other of tabs.values()) if (other.windowId === t.windowId) other.active = false
         t.active = true
+        t.hidden = false
       }
       if (typeof props.url === 'string') t.url = props.url
       return t as unknown as chrome.tabs.Tab
@@ -133,27 +105,28 @@ export function setupChromeMock(): ChromeMock {
       const list = Array.isArray(ids) ? ids : [ids]
       for (const id of list) tabs.delete(id)
     }),
-  }
-
-  const tabGroupsApi = {
-    TAB_GROUP_ID_NONE: -1,
-    update: vi.fn(async (id: number, changes: chrome.tabGroups.UpdateProperties) => {
-      const g = groups.get(id)
-      if (!g) throw new Error(`No group ${id}`)
-      if (changes.title !== undefined) g.title = changes.title
-      if (changes.color !== undefined) g.color = changes.color
-      if (changes.collapsed !== undefined) g.collapsed = changes.collapsed
-      return g as unknown as chrome.tabGroups.TabGroup
-    }),
-    query: vi.fn(async (q: chrome.tabGroups.QueryInfo) => {
-      const result: FakeGroup[] = []
-      for (const g of groups.values()) {
-        if (q.windowId !== undefined && g.windowId !== q.windowId) continue
-        result.push(g)
+    hide: vi.fn(async (ids: number | number[]) => {
+      const list = Array.isArray(ids) ? ids : [ids]
+      for (const id of list) {
+        const t = tabs.get(id)
+        if (t && !t.active) t.hidden = true
       }
-      return result as unknown as chrome.tabGroups.TabGroup[]
     }),
-    remove: (id: number) => groups.delete(id),
+    show: vi.fn(async (ids: number | number[]) => {
+      const list = Array.isArray(ids) ? ids : [ids]
+      for (const id of list) {
+        const t = tabs.get(id)
+        if (t) t.hidden = false
+      }
+    }),
+    ungroup: vi.fn(async (ids: number | number[]) => {
+      const list = Array.isArray(ids) ? ids : [ids]
+      for (const id of list) {
+        const t = tabs.get(id)
+        if (t) t.groupId = -1
+      }
+    }),
+    onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
   }
 
   const alarmsBacking = new Map<string, { name: string; periodInMinutes?: number }>()
@@ -188,10 +161,9 @@ export function setupChromeMock(): ChromeMock {
       local: makeArea(local),
     },
     tabs: tabsApi,
-    tabGroups: tabGroupsApi,
     alarms: alarmsApi,
     contextMenus: contextMenusApi,
   }
 
-  return { sync, local, tabs, groups, alarms: alarmsBacking, contextMenuItems }
+  return { sync, local, tabs, alarms: alarmsBacking, contextMenuItems }
 }

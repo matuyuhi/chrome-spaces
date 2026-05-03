@@ -1,183 +1,97 @@
 import {
+  type Folder,
+  type FolderId,
+  type ItemRef,
   type LiveSource,
-  type LiveSpace,
   type Space,
-  type SpaceId,
-  type StaticSpace,
   type SpaceColor,
-  TAB_GROUP_ID_NONE,
-  isLive,
+  type SpaceId,
+  type SpaceStore,
+  type TabRecord,
+  collectSpaceTabIds,
+  findContainingFolder,
+  isLiveFolder,
+  walkFolders,
 } from '../shared/types'
 import { loadStore, updateStore } from './storage'
-import { createTabAsGroupSeed } from './inflight'
 import { scheduleSync, unscheduleSync } from './live/alarms'
-import { syncLiveSpace } from './live/sync-engine'
 
 const now = (): number => Date.now()
 const uid = (): string => crypto.randomUUID()
 
-export interface CreateStaticSpaceInput {
+// ---- Space CRUD ----------------------------------------------------------
+
+export interface CreateSpaceInput {
   name: string
   color: SpaceColor
   emoji?: string
   windowId: number
+  // Existing tab ids to bulk-import into the new Space's root folder. If
+  // omitted, the Space starts empty (no auto-created starter tab — callers
+  // can append a tab later if they want).
+  initialTabIds?: number[]
 }
 
-export async function createStaticSpace(input: CreateStaticSpaceInput): Promise<StaticSpace> {
-  const seed = await createTabAsGroupSeed({ windowId: input.windowId, active: false })
-  if (!seed) throw new Error('Failed to create starter tab')
-  const { tab, groupId } = seed
-  await safeTabGroupUpdate(groupId, {
-    title: input.name,
-    color: input.color,
-    collapsed: false,
-  })
-
+export async function createSpace(input: CreateSpaceInput): Promise<Space> {
+  const rootId = uid()
   const id = uid()
   const ts = now()
-  const space: StaticSpace = {
-    kind: 'static',
+  const initial = input.initialTabIds ?? []
+  const space: Space = {
     id,
     name: input.name,
     color: input.color,
     emoji: input.emoji,
-    groupId,
     windowId: input.windowId,
     order: 0,
-    lastActiveTabId: tab.id,
+    rootFolderId: rootId,
     createdAt: ts,
     lastAccessedAt: ts,
+    lastActiveTabId: initial[0],
   }
-
-  await updateStore((s) => {
-    space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
-    s.spaces[id] = space
-  })
-
-  return space
-}
-
-export interface CreateStaticFromTabsInput {
-  name: string
-  color: SpaceColor
-  emoji?: string
-  windowId: number
-  // If omitted, captures every ungrouped tab in the window.
-  tabIds?: number[]
-}
-
-export async function createStaticSpaceFromTabs(
-  input: CreateStaticFromTabsInput,
-): Promise<StaticSpace> {
-  let tabIds = input.tabIds
-  if (tabIds === undefined) {
-    const tabs = await chrome.tabs.query({ windowId: input.windowId })
-    tabIds = tabs
-      .filter((t) => t.groupId === TAB_GROUP_ID_NONE && typeof t.id === 'number')
-      .map((t) => t.id as number)
-  }
-  if (tabIds.length === 0) {
-    throw new Error('No ungrouped tabs to capture in this window.')
-  }
-
-  const groupId = await chrome.tabs.group({
-    createProperties: { windowId: input.windowId },
-    tabIds,
-  })
-  await safeTabGroupUpdate(groupId, {
-    title: input.name,
-    color: input.color,
-    collapsed: false,
-  })
-
-  // Prefer the currently-active tab as lastActiveTabId so switching back
-  // to this space lands on what the user was just looking at.
-  const [activeTab] = await chrome.tabs.query({ windowId: input.windowId, active: true })
-  const activeId = typeof activeTab?.id === 'number' ? activeTab.id : undefined
-  const lastActiveTabId = activeId && tabIds.includes(activeId) ? activeId : tabIds[0]
-
-  const id = uid()
-  const ts = now()
-  const space: StaticSpace = {
-    kind: 'static',
-    id,
+  const root: Folder = {
+    id: rootId,
     name: input.name,
-    color: input.color,
-    emoji: input.emoji,
-    groupId,
-    windowId: input.windowId,
-    order: 0,
-    lastActiveTabId,
-    createdAt: ts,
-    lastAccessedAt: ts,
-  }
-
-  await updateStore((s) => {
-    space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
-    s.spaces[id] = space
-  })
-
-  return space
-}
-
-export interface CreateLiveSpaceInput {
-  name: string
-  color: SpaceColor
-  emoji?: string
-  windowId: number
-  source: LiveSource
-  refreshIntervalMin?: number
-}
-
-export async function createLiveSpace(input: CreateLiveSpaceInput): Promise<LiveSpace> {
-  const seed = await createTabAsGroupSeed({ windowId: input.windowId, active: false })
-  if (!seed) throw new Error('Failed to create starter tab')
-  const { tab, groupId } = seed
-  await safeTabGroupUpdate(groupId, {
-    title: input.name,
-    color: input.color,
     collapsed: false,
-  })
-
-  const id = uid()
-  const ts = now()
-  const space: LiveSpace = {
-    kind: 'live',
-    id,
-    name: input.name,
-    color: input.color,
-    emoji: input.emoji,
-    groupId,
-    windowId: input.windowId,
-    order: 0,
-    lastActiveTabId: tab.id,
-    createdAt: ts,
-    lastAccessedAt: ts,
-    source: input.source,
-    refreshIntervalMin: input.refreshIntervalMin ?? 0,
-    managedTabs: [],
-    starterTabId: tab.id,
+    items: initial.map((tabId) => ({ kind: 'tab' as const, tabId })),
   }
-
   await updateStore((s) => {
     space.order = Object.values(s.spaces).filter((sp) => sp.windowId === input.windowId).length
     s.spaces[id] = space
+    s.folders[rootId] = root
+    for (const tabId of initial) {
+      if (!s.tabs[tabId]) s.tabs[tabId] = { tabId, windowId: input.windowId }
+    }
+    // Newly-imported tabs are now claimed by this Space; any other Space's
+    // root that was holding the same tab id should let go.
+    detachTabsFromOtherSpaces(s, id, initial)
   })
-
-  await scheduleSync(id, space.refreshIntervalMin)
-
   return space
+}
+
+function detachTabsFromOtherSpaces(
+  s: SpaceStore,
+  ownerSpaceId: SpaceId,
+  tabIds: number[],
+): void {
+  if (tabIds.length === 0) return
+  const claim = new Set(tabIds)
+  for (const sp of Object.values(s.spaces)) {
+    if (sp.id === ownerSpaceId) continue
+    for (const folder of walkFolders(s, sp.rootFolderId)) {
+      folder.items = folder.items.filter(
+        (it) => !(it.kind === 'tab' && claim.has(it.tabId)),
+      )
+    }
+  }
 }
 
 export async function renameSpace(id: SpaceId, name: string): Promise<void> {
   await updateStore((s) => {
     const sp = s.spaces[id]
-    if (sp) sp.name = name
+    if (!sp) return
+    sp.name = name
   })
-  const sp = (await loadStore()).spaces[id]
-  if (sp && sp.groupId !== TAB_GROUP_ID_NONE) {
-    await safeTabGroupUpdate(sp.groupId, { title: name })
-  }
 }
 
 export async function setSpaceColor(id: SpaceId, color: SpaceColor): Promise<void> {
@@ -185,64 +99,50 @@ export async function setSpaceColor(id: SpaceId, color: SpaceColor): Promise<voi
     const sp = s.spaces[id]
     if (sp) sp.color = color
   })
-  const sp = (await loadStore()).spaces[id]
-  if (sp && sp.groupId !== TAB_GROUP_ID_NONE) {
-    await safeTabGroupUpdate(sp.groupId, { color })
-  }
 }
 
-export interface UpdateLiveSpaceInput {
-  source?: LiveSource
-  refreshIntervalMin?: number
-}
-
-export async function updateLiveSpace(
+export async function setSpaceEmoji(
   id: SpaceId,
-  patch: UpdateLiveSpaceInput,
-): Promise<LiveSpace | undefined> {
-  let updated: LiveSpace | undefined
-  let intervalChanged = false
-  await updateStore((s) => {
-    const sp = s.spaces[id]
-    if (!sp || !isLive(sp)) return
-    if (patch.source !== undefined) sp.source = patch.source
-    if (patch.refreshIntervalMin !== undefined && patch.refreshIntervalMin !== sp.refreshIntervalMin) {
-      sp.refreshIntervalMin = patch.refreshIntervalMin
-      intervalChanged = true
-    }
-    updated = sp
-  })
-  if (updated && intervalChanged) {
-    await scheduleSync(id, updated.refreshIntervalMin)
-  }
-  return updated
-}
-
-export async function setSpaceEmoji(id: SpaceId, emoji: string | undefined): Promise<void> {
+  emoji: string | undefined,
+): Promise<void> {
   await updateStore((s) => {
     const sp = s.spaces[id]
     if (sp) sp.emoji = emoji
   })
 }
 
-export async function deleteSpace(id: SpaceId, options: { closeTabs: boolean }): Promise<void> {
+export async function deleteSpace(
+  id: SpaceId,
+  options: { closeTabs: boolean },
+): Promise<void> {
   const store = await loadStore()
   const space = store.spaces[id]
   if (!space) return
 
-  if (isLive(space)) await unscheduleSync(id)
+  const tabIds = collectSpaceTabIds(store, id)
 
-  if (options.closeTabs && space.groupId !== TAB_GROUP_ID_NONE) {
+  // Stop alarms for any Live folder under this Space.
+  for (const folder of walkFolders(store, space.rootFolderId)) {
+    if (folder.live) await unscheduleSync(folder.id)
+  }
+
+  if (options.closeTabs && tabIds.length > 0) {
     try {
-      const tabs = await chrome.tabs.query({ groupId: space.groupId })
-      const ids = tabs.map((t) => t.id).filter((tid): tid is number => typeof tid === 'number')
-      if (ids.length > 0) await chrome.tabs.remove(ids)
+      await chrome.tabs.remove(tabIds)
     } catch {
-      // Group already gone — nothing to close.
+      /* some tabs may already be gone */
     }
   }
 
   await updateStore((s) => {
+    const sp = s.spaces[id]
+    if (!sp) return
+    for (const folder of walkFolders(s, sp.rootFolderId)) {
+      delete s.folders[folder.id]
+    }
+    if (options.closeTabs) {
+      for (const tabId of tabIds) delete s.tabs[tabId]
+    }
     delete s.spaces[id]
     for (const [winId, activeId] of Object.entries(s.activeSpaceByWindow)) {
       if (activeId === id) delete s.activeSpaceByWindow[Number(winId)]
@@ -250,61 +150,399 @@ export async function deleteSpace(id: SpaceId, options: { closeTabs: boolean }):
   })
 }
 
+export async function reorderSpaces(
+  windowId: number,
+  orderedIds: SpaceId[],
+): Promise<void> {
+  await updateStore((s) => {
+    orderedIds.forEach((id, index) => {
+      const sp = s.spaces[id]
+      if (sp && sp.windowId === windowId) sp.order = index
+    })
+  })
+}
+
+// ---- Folder CRUD ---------------------------------------------------------
+
+export interface CreateFolderInput {
+  parentFolderId: FolderId
+  name: string
+  emoji?: string
+  color?: SpaceColor
+  live?: { source: LiveSource; refreshIntervalMin?: number }
+}
+
+export async function createFolder(input: CreateFolderInput): Promise<Folder> {
+  const id = uid()
+  const folder: Folder = {
+    id,
+    name: input.name,
+    emoji: input.emoji,
+    color: input.color,
+    collapsed: false,
+    items: [],
+    live: input.live
+      ? {
+          source: input.live.source,
+          refreshIntervalMin: input.live.refreshIntervalMin ?? 0,
+          managedTabs: [],
+        }
+      : undefined,
+  }
+  await updateStore((s) => {
+    const parent = s.folders[input.parentFolderId]
+    if (!parent) throw new Error(`Parent folder not found: ${input.parentFolderId}`)
+    s.folders[id] = folder
+    parent.items.push({ kind: 'folder', folderId: id })
+  })
+  if (folder.live && folder.live.refreshIntervalMin > 0) {
+    await scheduleSync(id, folder.live.refreshIntervalMin)
+  }
+  return folder
+}
+
+export async function renameFolder(id: FolderId, name: string): Promise<void> {
+  await updateStore((s) => {
+    const f = s.folders[id]
+    if (f) f.name = name
+  })
+}
+
+export async function setFolderEmoji(
+  id: FolderId,
+  emoji: string | undefined,
+): Promise<void> {
+  await updateStore((s) => {
+    const f = s.folders[id]
+    if (f) f.emoji = emoji
+  })
+}
+
+export async function setFolderCollapsed(
+  id: FolderId,
+  collapsed: boolean,
+): Promise<void> {
+  await updateStore((s) => {
+    const f = s.folders[id]
+    if (f) f.collapsed = collapsed
+  })
+}
+
+export async function updateLiveFolder(
+  id: FolderId,
+  patch: { source?: LiveSource; refreshIntervalMin?: number },
+): Promise<Folder | undefined> {
+  let updated: Folder | undefined
+  let intervalChanged = false
+  await updateStore((s) => {
+    const f = s.folders[id]
+    if (!f || !f.live) return
+    if (patch.source !== undefined) f.live.source = patch.source
+    if (
+      patch.refreshIntervalMin !== undefined &&
+      patch.refreshIntervalMin !== f.live.refreshIntervalMin
+    ) {
+      f.live.refreshIntervalMin = patch.refreshIntervalMin
+      intervalChanged = true
+    }
+    updated = f
+  })
+  if (updated && updated.live && intervalChanged) {
+    await scheduleSync(id, updated.live.refreshIntervalMin)
+  }
+  return updated
+}
+
+export async function deleteFolder(
+  id: FolderId,
+  options: { closeTabs: boolean },
+): Promise<void> {
+  const store = await loadStore()
+  const folder = store.folders[id]
+  if (!folder) return
+  // Don't allow deleting a Space's root folder via this — use deleteSpace.
+  for (const sp of Object.values(store.spaces)) {
+    if (sp.rootFolderId === id) {
+      throw new Error('Cannot delete a root folder; delete the Space instead.')
+    }
+  }
+
+  // Collect tabs to optionally close + folder ids to delete (recursive).
+  const folderIdsToDelete: FolderId[] = []
+  const tabIdsInside: number[] = []
+  const visit = (fid: FolderId) => {
+    const f = store.folders[fid]
+    if (!f) return
+    folderIdsToDelete.push(fid)
+    for (const item of f.items) {
+      if (item.kind === 'tab') tabIdsInside.push(item.tabId)
+      else visit(item.folderId)
+    }
+  }
+  visit(id)
+
+  for (const fid of folderIdsToDelete) {
+    const f = store.folders[fid]
+    if (f?.live) await unscheduleSync(fid)
+  }
+
+  if (options.closeTabs && tabIdsInside.length > 0) {
+    try {
+      await chrome.tabs.remove(tabIdsInside)
+    } catch {
+      /* some tabs may already be gone */
+    }
+  }
+
+  await updateStore((s) => {
+    // Remove from any parent's items list.
+    for (const f of Object.values(s.folders)) {
+      f.items = f.items.filter((it) => !(it.kind === 'folder' && it.folderId === id))
+    }
+    for (const fid of folderIdsToDelete) delete s.folders[fid]
+    if (options.closeTabs) {
+      for (const tabId of tabIdsInside) delete s.tabs[tabId]
+    }
+  })
+}
+
+// ---- Item movement (DnD primitive) --------------------------------------
+
+export interface MoveItemInput {
+  item: ItemRef
+  toFolderId: FolderId
+  // index in the target folder's items; clamped to [0, items.length].
+  toIndex: number
+}
+
+export async function moveItem(input: MoveItemInput): Promise<void> {
+  await updateStore((s) => {
+    const target = s.folders[input.toFolderId]
+    if (!target) return
+    // Refuse to drop user content into a Live folder: sync engine owns
+    // those items deterministically.
+    if (target.live) return
+    // Refuse cycles: cannot move a folder into itself or a descendant.
+    if (input.item.kind === 'folder') {
+      if (input.item.folderId === input.toFolderId) return
+      const descendants = new Set<FolderId>()
+      const stack: FolderId[] = [input.item.folderId]
+      while (stack.length) {
+        const id = stack.pop()!
+        if (descendants.has(id)) continue
+        descendants.add(id)
+        const f = s.folders[id]
+        if (!f) continue
+        for (const it of f.items) if (it.kind === 'folder') stack.push(it.folderId)
+      }
+      if (descendants.has(input.toFolderId)) return
+    }
+
+    // Pull the item out of whichever folder currently holds it.
+    for (const f of Object.values(s.folders)) {
+      f.items = f.items.filter((it) => !sameItem(it, input.item))
+    }
+    const insertAt = Math.max(0, Math.min(input.toIndex, target.items.length))
+    target.items.splice(insertAt, 0, input.item)
+  })
+}
+
+function sameItem(a: ItemRef, b: ItemRef): boolean {
+  if (a.kind === 'tab' && b.kind === 'tab') return a.tabId === b.tabId
+  if (a.kind === 'folder' && b.kind === 'folder') return a.folderId === b.folderId
+  return false
+}
+
+// ---- Tab pinning (Arc snap-back) ----------------------------------------
+
+export async function pinTab(tabId: number, baseUrl: string): Promise<void> {
+  await updateStore((s) => {
+    const t = s.tabs[tabId]
+    if (t) t.baseUrl = baseUrl
+  })
+}
+
+export async function unpinTab(tabId: number): Promise<void> {
+  await updateStore((s) => {
+    const t = s.tabs[tabId]
+    if (t) delete t.baseUrl
+  })
+}
+
+export async function resolveBaseUrl(tabId: number): Promise<string | undefined> {
+  const store = await loadStore()
+  // Live folders carry their managed URL — that wins over a user-set baseUrl.
+  for (const f of Object.values(store.folders)) {
+    if (!f.live) continue
+    const m = f.live.managedTabs.find((mt) => mt.tabId === tabId)
+    if (m) return m.url
+  }
+  return store.tabs[tabId]?.baseUrl
+}
+
+export async function resetTabToBase(tabId: number): Promise<boolean> {
+  const url = await resolveBaseUrl(tabId)
+  if (!url) return false
+  try {
+    await chrome.tabs.update(tabId, { url })
+    return true
+  } catch {
+    return false
+  }
+}
+
+// ---- Tab record bookkeeping (called from chrome.tabs handlers) ----------
+
+export async function registerTab(tab: chrome.tabs.Tab): Promise<void> {
+  if (typeof tab.id !== 'number' || typeof tab.windowId !== 'number') return
+  const tabId = tab.id
+  const windowId = tab.windowId
+  await updateStore((s) => {
+    s.tabs[tabId] = { ...s.tabs[tabId], tabId, windowId }
+    // Append to the active Space's root folder if not already tracked.
+    const activeId = s.activeSpaceByWindow[windowId]
+    if (!activeId) return
+    const space = s.spaces[activeId]
+    if (!space) return
+    const root = s.folders[space.rootFolderId]
+    if (!root) return
+    const alreadyAnywhere = Object.values(s.folders).some((f) =>
+      f.items.some((it) => it.kind === 'tab' && it.tabId === tabId),
+    )
+    if (!alreadyAnywhere) root.items.push({ kind: 'tab', tabId })
+  })
+}
+
+export async function dropTab(tabId: number): Promise<void> {
+  await updateStore((s) => {
+    delete s.tabs[tabId]
+    for (const f of Object.values(s.folders)) {
+      f.items = f.items.filter((it) => !(it.kind === 'tab' && it.tabId === tabId))
+      if (f.live) {
+        f.live.managedTabs = f.live.managedTabs.filter((m) => m.tabId !== tabId)
+      }
+    }
+    for (const sp of Object.values(s.spaces)) {
+      if (sp.lastActiveTabId === tabId) sp.lastActiveTabId = undefined
+    }
+  })
+}
+
+export async function setLastActiveTab(windowId: number, tabId: number): Promise<void> {
+  const store = await loadStore()
+  const activeId = store.activeSpaceByWindow[windowId]
+  if (!activeId) return
+  const sp = store.spaces[activeId]
+  if (!sp || sp.lastActiveTabId === tabId) return
+  await updateStore((s) => {
+    const id = s.activeSpaceByWindow[windowId]
+    if (!id) return
+    const space = s.spaces[id]
+    if (space) space.lastActiveTabId = tabId
+  })
+}
+
+// ---- Switch (the centerpiece) -------------------------------------------
+
 export async function switchTo(spaceId: SpaceId, windowId?: number): Promise<void> {
   const store = await loadStore()
-  let target = store.spaces[spaceId]
+  const target = store.spaces[spaceId]
   if (!target) return
   const winId = windowId ?? target.windowId
 
-  // The Tab Group may have been removed outside the popup (right-click →
-  // Close group, or closing every tab in the group). The Space record was
-  // preserved with groupId = TAB_GROUP_ID_NONE; switching to it should
-  // resurrect the group rather than no-op.
-  if (target.groupId === TAB_GROUP_ID_NONE) {
-    target = await rehydrateSpace(target)
-  }
-
-  // Persist active first so the onTabGroupUpdated handler does not see a
-  // stale activeSpaceByWindow when our own tabGroups.update events fire,
-  // which would otherwise cause a recursive switchTo storm and burn through
-  // the storage write quota.
+  // Persist active first so onTabActivated and onTabUpdated handlers see
+  // the new state and don't try to "fix up" tabs based on the old Space.
   await updateStore((s) => {
     s.activeSpaceByWindow[winId] = spaceId
     const sp = s.spaces[spaceId]
     if (sp) sp.lastAccessedAt = now()
   })
 
-  const sameWindow = Object.values(store.spaces).filter((s) => s.windowId === winId)
+  const targetTabIds = new Set(collectSpaceTabIds(store, spaceId))
 
-  for (const s of sameWindow) {
-    if (s.id === spaceId) continue
-    if (s.groupId === TAB_GROUP_ID_NONE) continue
-    await safeTabGroupUpdate(s.groupId, { collapsed: true })
-  }
-
-  if (target.groupId !== TAB_GROUP_ID_NONE) {
-    await safeTabGroupUpdate(target.groupId, { collapsed: false })
-  }
-
-  let activated = false
-  if (target.lastActiveTabId !== undefined) {
+  // Activate one of the target's tabs first — Chrome refuses to hide an
+  // active tab. Pick lastActiveTabId, fall back to the first known tab.
+  const activatePreferred = target.lastActiveTabId
+  let activatedId: number | undefined
+  if (activatePreferred && targetTabIds.has(activatePreferred)) {
     try {
-      await chrome.tabs.update(target.lastActiveTabId, { active: true })
-      activated = true
+      await chrome.tabs.update(activatePreferred, { active: true })
+      activatedId = activatePreferred
     } catch {
-      // tab gone; fall through
+      /* tab missing */
     }
   }
-  if (!activated && target.groupId !== TAB_GROUP_ID_NONE) {
+  if (activatedId === undefined) {
+    for (const id of targetTabIds) {
+      try {
+        await chrome.tabs.update(id, { active: true })
+        activatedId = id
+        break
+      } catch {
+        /* try next */
+      }
+    }
+  }
+
+  // If the Space has no tabs at all, create a starter tab for it.
+  if (activatedId === undefined) {
     try {
-      const tabs = await chrome.tabs.query({ groupId: target.groupId })
-      const firstId = tabs[0]?.id
-      if (typeof firstId === 'number') await chrome.tabs.update(firstId, { active: true })
+      const created = await chrome.tabs.create({ windowId: winId, active: true })
+      if (typeof created.id === 'number') {
+        activatedId = created.id
+        targetTabIds.add(created.id)
+        await updateStore((s) => {
+          s.tabs[created.id!] = { tabId: created.id!, windowId: winId }
+          const sp = s.spaces[spaceId]
+          if (!sp) return
+          const root = s.folders[sp.rootFolderId]
+          if (root) root.items.push({ kind: 'tab', tabId: created.id! })
+        })
+      }
     } catch {
-      /* nothing to activate */
+      /* nothing we can do */
+    }
+  }
+
+  // Show every target tab (idempotent), then hide every other tab in the
+  // window.
+  const allTabs = await chrome.tabs.query({ windowId: winId })
+  const toShow: number[] = []
+  const toHide: number[] = []
+  for (const t of allTabs) {
+    if (typeof t.id !== 'number') continue
+    if (targetTabIds.has(t.id)) {
+      if ((t as { hidden?: boolean }).hidden) toShow.push(t.id)
+    } else if (t.id !== activatedId) {
+      // Chrome refuses to hide the active tab; we already activated one in
+      // the target Space above so this guard only triggers if activation
+      // failed.
+      toHide.push(t.id)
+    }
+  }
+  // chrome.tabs.show / hide are real APIs but @types/chrome's version
+  // here predates them. Cast to access.
+  const tabsApi = chrome.tabs as unknown as {
+    show: (ids: number[]) => Promise<void>
+    hide: (ids: number[]) => Promise<void>
+  }
+  if (toShow.length > 0) {
+    try {
+      await tabsApi.show(toShow)
+    } catch {
+      /* ignore */
+    }
+  }
+  if (toHide.length > 0) {
+    try {
+      await tabsApi.hide(toHide)
+    } catch {
+      /* ignore — some tabs may not be hideable */
     }
   }
 }
+
+// ---- Read helpers --------------------------------------------------------
 
 export async function getSpace(id: SpaceId): Promise<Space | undefined> {
   return (await loadStore()).spaces[id]
@@ -323,168 +561,76 @@ export async function getActiveSpace(windowId: number): Promise<Space | undefine
   return id ? store.spaces[id] : undefined
 }
 
-export async function findSpaceByGroupId(
-  groupId: number,
-  windowId?: number,
-): Promise<Space | undefined> {
-  const store = await loadStore()
-  return Object.values(store.spaces).find(
-    (s) => s.groupId === groupId && (windowId === undefined || s.windowId === windowId),
-  )
-}
-
-export async function setLastActiveTab(windowId: number, tabId: number): Promise<void> {
-  // Skip the write if the value would not change. This keeps rapid tab
-  // navigation from generating one storage write per onActivated event.
-  const store = await loadStore()
-  const activeId = store.activeSpaceByWindow[windowId]
-  if (!activeId) return
-  const sp = store.spaces[activeId]
-  if (!sp || sp.lastActiveTabId === tabId) return
-
-  await updateStore((s) => {
-    const id = s.activeSpaceByWindow[windowId]
-    if (!id) return
-    const space = s.spaces[id]
-    if (space) space.lastActiveTabId = tabId
-  })
-}
-
-async function rehydrateSpace(space: Space): Promise<Space> {
-  const seed = await createTabAsGroupSeed({ windowId: space.windowId, active: false })
-  if (!seed) throw new Error('Failed to create starter tab for rehydrate')
-  const { tab, groupId } = seed
-  await safeTabGroupUpdate(groupId, {
-    title: space.name,
-    color: space.color,
-    collapsed: false,
-  })
-
-  let updated: Space = space
-  await updateStore((s) => {
-    const sp = s.spaces[space.id]
-    if (!sp) return
-    sp.groupId = groupId
-    sp.lastActiveTabId = tab.id
-    // pinnedTabs referenced tab ids that are gone with the old group.
-    sp.pinnedTabs = undefined
-    if (isLive(sp)) {
-      // Old managedTabs are gone with the old group; the next sync will
-      // refill from the source.
-      sp.managedTabs = []
-      sp.starterTabId = tab.id
+// Walk every Chrome Tab Group in the window and create a Space from each.
+// Tabs claimed by an existing Space are skipped (they're already accounted
+// for); leftover tabs in a group become the new Space's root folder. The
+// underlying Chrome Tab Group is ungrouped at the end so the model stays
+// in one place.
+export async function importChromeTabGroups(windowId: number): Promise<Space[]> {
+  const groups = await chrome.tabGroups.query({ windowId })
+  const created: Space[] = []
+  for (const g of groups) {
+    let groupTabs: chrome.tabs.Tab[]
+    try {
+      groupTabs = await chrome.tabs.query({ groupId: g.id })
+    } catch {
+      continue
     }
-    updated = sp
-  })
-
-  if (isLive(updated)) {
-    // Don't await: the sync may take several seconds (network) and the
-    // caller is in the middle of a switchTo flow.
-    void syncLiveSpace(updated.id)
-  }
-  return updated
-}
-
-export async function pinTab(tabId: number, baseUrl: string): Promise<Space | undefined> {
-  let groupId: number | undefined
-  try {
-    const tab = await chrome.tabs.get(tabId)
-    if (typeof tab.groupId === 'number') groupId = tab.groupId
-  } catch {
-    return undefined
-  }
-  if (groupId === undefined || groupId === TAB_GROUP_ID_NONE) return undefined
-  const store = await loadStore()
-  const space = Object.values(store.spaces).find((sp) => sp.groupId === groupId)
-  if (!space) return undefined
-  await updateStore((s) => {
-    const sp = s.spaces[space.id]
-    if (!sp) return
-    if (!sp.pinnedTabs) sp.pinnedTabs = {}
-    sp.pinnedTabs[tabId] = baseUrl
-  })
-  return space
-}
-
-export async function unpinTab(tabId: number): Promise<void> {
-  await updateStore((s) => {
-    for (const sp of Object.values(s.spaces)) {
-      if (sp.pinnedTabs && tabId in sp.pinnedTabs) {
-        delete sp.pinnedTabs[tabId]
-        if (Object.keys(sp.pinnedTabs).length === 0) sp.pinnedTabs = undefined
-      }
+    const store = await loadStore()
+    const claimed = new Set<number>()
+    for (const f of Object.values(store.folders)) {
+      for (const it of f.items) if (it.kind === 'tab') claimed.add(it.tabId)
     }
-  })
-}
+    const tabIds = groupTabs
+      .map((t) => t.id)
+      .filter((id): id is number => typeof id === 'number' && !claimed.has(id))
+    if (tabIds.length === 0) continue
 
-export async function resolveBaseUrl(tabId: number): Promise<string | undefined> {
-  const store = await loadStore()
-  for (const sp of Object.values(store.spaces)) {
-    if (isLive(sp)) {
-      const managed = sp.managedTabs.find((m) => m.tabId === tabId)
-      if (managed) return managed.url
-    }
-    if (sp.pinnedTabs && tabId in sp.pinnedTabs) {
-      return sp.pinnedTabs[tabId]
-    }
-  }
-  return undefined
-}
-
-export async function resetTabToBase(tabId: number): Promise<boolean> {
-  const url = await resolveBaseUrl(tabId)
-  if (!url) return false
-  try {
-    await chrome.tabs.update(tabId, { url })
-    return true
-  } catch {
-    return false
-  }
-}
-
-export async function dropPinForTab(tabId: number): Promise<void> {
-  // Same as unpinTab but reads conditionally to avoid spurious writes when
-  // the closed tab was never pinned (the common case on every tab close).
-  const store = await loadStore()
-  const hasPin = Object.values(store.spaces).some(
-    (sp) => sp.pinnedTabs && tabId in sp.pinnedTabs,
-  )
-  if (!hasPin) return
-  await unpinTab(tabId)
-}
-
-export async function reconcilePinnedTabs(): Promise<void> {
-  const allTabs = await chrome.tabs.query({})
-  const liveIds = new Set(
-    allTabs.map((t) => t.id).filter((id): id is number => typeof id === 'number'),
-  )
-  await updateStore((s) => {
-    for (const sp of Object.values(s.spaces)) {
-      if (!sp.pinnedTabs) continue
-      for (const idStr of Object.keys(sp.pinnedTabs)) {
-        if (!liveIds.has(Number(idStr))) delete sp.pinnedTabs[Number(idStr)]
-      }
-      if (Object.keys(sp.pinnedTabs).length === 0) sp.pinnedTabs = undefined
-    }
-  })
-}
-
-export async function reorderSpaces(windowId: number, orderedIds: SpaceId[]): Promise<void> {
-  await updateStore((s) => {
-    orderedIds.forEach((id, index) => {
-      const sp = s.spaces[id]
-      if (sp && sp.windowId === windowId) sp.order = index
+    const space = await createSpace({
+      name: g.title || 'Imported',
+      color: g.color,
+      windowId,
+      initialTabIds: tabIds,
     })
-  })
+    created.push(space)
+
+    try {
+      await chrome.tabs.ungroup(tabIds)
+    } catch {
+      /* group may have just been removed */
+    }
+  }
+  return created
 }
 
-async function safeTabGroupUpdate(
-  groupId: number,
-  changes: chrome.tabGroups.UpdateProperties,
-): Promise<void> {
-  try {
-    await chrome.tabGroups.update(groupId, changes)
-  } catch {
-    // Group may have been removed by the user; reconcile handles cleanup.
+// Used by reconcile to drop stale tab refs.
+export function pruneDeadTabs(s: SpaceStore, liveTabIds: Set<number>): boolean {
+  let changed = false
+  for (const f of Object.values(s.folders)) {
+    const before = f.items.length
+    f.items = f.items.filter((it) => it.kind === 'folder' || liveTabIds.has(it.tabId))
+    if (f.items.length !== before) changed = true
+    if (f.live) {
+      const beforeM = f.live.managedTabs.length
+      f.live.managedTabs = f.live.managedTabs.filter((m) => liveTabIds.has(m.tabId))
+      if (f.live.managedTabs.length !== beforeM) changed = true
+    }
   }
+  for (const tabId of Object.keys(s.tabs)) {
+    if (!liveTabIds.has(Number(tabId))) {
+      delete s.tabs[Number(tabId)]
+      changed = true
+    }
+  }
+  for (const sp of Object.values(s.spaces)) {
+    if (sp.lastActiveTabId !== undefined && !liveTabIds.has(sp.lastActiveTabId)) {
+      sp.lastActiveTabId = undefined
+      changed = true
+    }
+  }
+  return changed
 }
+
+// Re-exports kept for tests / handlers.
+export { findContainingFolder, isLiveFolder, walkFolders }
+export type { TabRecord }

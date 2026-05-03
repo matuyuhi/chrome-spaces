@@ -1,29 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { type LiveSource, type SpaceColor } from '../shared/types'
-
-const COLORS: SpaceColor[] = [
-  'blue',
-  'red',
-  'green',
-  'yellow',
-  'cyan',
-  'purple',
-  'pink',
-  'orange',
-  'grey',
-]
-
-const COLOR_HEX: Record<SpaceColor, string> = {
-  grey: '#9aa0a6',
-  blue: '#1a73e8',
-  red: '#d93025',
-  yellow: '#f9ab00',
-  green: '#188038',
-  pink: '#d01884',
-  purple: '#9334e6',
-  cyan: '#007b83',
-  orange: '#fa7b17',
-}
+import { type LiveSource } from '../shared/types'
 
 type FlatPreset =
   | 'pr-review-requested'
@@ -94,35 +70,32 @@ function sourceToPreset(source: LiveSource | undefined): FlatPreset {
   return source.preset === 'custom' ? 'issue-custom' : (`issue-${source.preset}` as FlatPreset)
 }
 
+function defaultCustomQueryFor(preset: FlatPreset): string {
+  return preset === 'issue-custom' ? 'is:issue is:open ' : 'is:pr is:open '
+}
+
 function placeholderQueryFor(preset: FlatPreset): string {
   return preset === 'issue-custom'
     ? 'is:issue is:open label:bug org:foo'
     : 'is:pr is:open org:foo'
 }
 
-function defaultCustomQueryFor(preset: FlatPreset): string {
-  return preset === 'issue-custom' ? 'is:issue is:open ' : 'is:pr is:open '
-}
-
-export interface LiveSpaceFormResult {
+export interface LiveFolderFormResult {
   name: string
-  color: SpaceColor
   source: LiveSource
   refreshIntervalMin: number
 }
 
 interface Props {
-  mode?: 'create' | 'edit'
-  initial?: LiveSpaceFormResult
-  defaultColor: SpaceColor
-  onSubmit: (input: LiveSpaceFormResult) => void | Promise<void>
+  mode: 'create' | 'edit'
+  initial?: { name: string; source: LiveSource; refreshIntervalMin: number }
+  onSubmit: (input: LiveFolderFormResult) => void | Promise<void>
   onCancel: () => void
 }
 
-export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit, onCancel }: Props) {
+export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
   const initialPreset = sourceToPreset(initial?.source)
   const [name, setName] = useState(initial?.name ?? 'Reviews')
-  const [color, setColor] = useState<SpaceColor>(initial?.color ?? defaultColor)
   const [preset, setPreset] = useState<FlatPreset>(initialPreset)
   const [user, setUser] = useState(
     initial && 'user' in initial.source ? (initial.source.user ?? '') : '',
@@ -143,13 +116,11 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!name.trim() || submitting) return
-
     const source = presetToSource(preset, user, customQuery, repoFilter)
     if (!source) return
-
     setSubmitting(true)
     try {
-      await onSubmit({ name: name.trim(), color, source, refreshIntervalMin: interval })
+      await onSubmit({ name: name.trim(), source, refreshIntervalMin: interval })
     } finally {
       setSubmitting(false)
     }
@@ -157,11 +128,12 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
 
   const handlePresetChange = (next: FlatPreset) => {
     if (preset === next) return
-    // When switching between PR-custom and Issue-custom, swap to a sensible
-    // starter query so the user does not have to retype the is:* prefix.
     const wasCustom = preset === 'pr-custom' || preset === 'issue-custom'
     const willBeCustom = next === 'pr-custom' || next === 'issue-custom'
-    if (willBeCustom && (!wasCustom || customQuery.trim() === defaultCustomQueryFor(preset).trim())) {
+    if (
+      willBeCustom &&
+      (!wasCustom || customQuery.trim() === defaultCustomQueryFor(preset).trim())
+    ) {
       setCustomQuery(defaultCustomQueryFor(next))
     }
     setPreset(next)
@@ -173,7 +145,7 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
         <button type="button" className="btn-link" onClick={onCancel}>
           ← Back
         </button>
-        <h2>{isEdit ? 'Edit Live Folder' : 'New GitHub Live Folder'}</h2>
+        <h2>{isEdit ? 'Edit Live Folder' : 'New Live Folder'}</h2>
       </header>
 
       {!isEdit && (
@@ -189,27 +161,12 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
         </label>
       )}
 
-      {!isEdit && (
-        <label className="field">
-          <span>Color</span>
-          <div className="color-grid">
-            {COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                className={`color-swatch ${c === color ? 'is-current' : ''}`}
-                style={{ background: COLOR_HEX[c] }}
-                onClick={() => setColor(c)}
-                aria-label={`Color ${c}`}
-              />
-            ))}
-          </div>
-        </label>
-      )}
-
       <label className="field">
         <span>Source</span>
-        <select value={preset} onChange={(e) => handlePresetChange(e.target.value as FlatPreset)}>
+        <select
+          value={preset}
+          onChange={(e) => handlePresetChange(e.target.value as FlatPreset)}
+        >
           <optgroup label="Pull requests">
             {PR_PRESETS.map((p) => (
               <option key={p.value} value={p.value}>
@@ -229,7 +186,7 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
 
       {!isCustom && (
         <label className="field">
-          <span>User (optional, defaults to @me)</span>
+          <span>User (default: @me)</span>
           <input
             value={user}
             onChange={(e) => setUser(e.target.value)}
@@ -240,11 +197,11 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
 
       {!isCustom && (
         <label className="field">
-          <span>Filter (optional: empty/* = all repos, prefix ! to exclude)</span>
+          <span>Filter (empty/* = all; ! to exclude)</span>
           <input
             value={repoFilter}
             onChange={(e) => setRepoFilter(e.target.value)}
-            placeholder="acme   !sb   org:foo   user:bar   repo:a/b"
+            placeholder="acme  !sb  org:foo  user:bar  repo:a/b"
           />
         </label>
       )}
@@ -261,13 +218,15 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
       )}
 
       <label className="field">
-        <span>Refresh interval (minutes; 0 = manual only)</span>
+        <span>Refresh interval (min; 0 = manual only)</span>
         <input
           type="number"
           min={0}
           max={60}
           value={interval}
-          onChange={(e) => setIntervalMin(Math.max(0, Math.min(60, Number(e.target.value) || 0)))}
+          onChange={(e) =>
+            setIntervalMin(Math.max(0, Math.min(60, Number(e.target.value) || 0)))
+          }
         />
       </label>
 

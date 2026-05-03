@@ -1,28 +1,30 @@
 import { loadStore } from '../storage'
-import { isLive, type SpaceId } from '../../shared/types'
-import { syncLiveSpace } from './sync-engine'
+import { type FolderId } from '../../shared/types'
+import { syncLiveFolder } from './sync-engine'
 
-const ALARM_PREFIX = 'live-space:'
+const ALARM_PREFIX = 'live-folder:'
 
-export function alarmName(spaceId: SpaceId): string {
-  return `${ALARM_PREFIX}${spaceId}`
+export function alarmName(folderId: FolderId): string {
+  return `${ALARM_PREFIX}${folderId}`
 }
 
-export function spaceIdFromAlarm(name: string): SpaceId | undefined {
+export function folderIdFromAlarm(name: string): FolderId | undefined {
   return name.startsWith(ALARM_PREFIX) ? name.slice(ALARM_PREFIX.length) : undefined
 }
 
-export async function scheduleSync(spaceId: SpaceId, intervalMin: number): Promise<void> {
-  // 0 (or anything <1) means "manual only" — clear any existing alarm.
+export async function scheduleSync(
+  folderId: FolderId,
+  intervalMin: number,
+): Promise<void> {
   if (intervalMin < 1) {
-    await chrome.alarms.clear(alarmName(spaceId))
+    await chrome.alarms.clear(alarmName(folderId))
     return
   }
-  await chrome.alarms.create(alarmName(spaceId), { periodInMinutes: intervalMin })
+  await chrome.alarms.create(alarmName(folderId), { periodInMinutes: intervalMin })
 }
 
-export async function unscheduleSync(spaceId: SpaceId): Promise<void> {
-  await chrome.alarms.clear(alarmName(spaceId))
+export async function unscheduleSync(folderId: FolderId): Promise<void> {
+  await chrome.alarms.clear(alarmName(folderId))
 }
 
 export async function reconcileAlarms(): Promise<void> {
@@ -30,10 +32,10 @@ export async function reconcileAlarms(): Promise<void> {
   const desired = new Map<string, number>()
 
   const store = await loadStore()
-  for (const sp of Object.values(store.spaces)) {
-    if (!isLive(sp)) continue
-    if (sp.refreshIntervalMin < 1) continue // manual-only — no alarm
-    desired.set(alarmName(sp.id), sp.refreshIntervalMin)
+  for (const f of Object.values(store.folders)) {
+    if (!f.live) continue
+    if (f.live.refreshIntervalMin < 1) continue
+    desired.set(alarmName(f.id), f.live.refreshIntervalMin)
   }
 
   for (const a of all) {
@@ -50,7 +52,7 @@ export async function reconcileAlarms(): Promise<void> {
 }
 
 export function handleAlarm(alarm: chrome.alarms.Alarm): void {
-  const id = spaceIdFromAlarm(alarm.name)
+  const id = folderIdFromAlarm(alarm.name)
   if (!id) return
-  void syncLiveSpace(id)
+  void syncLiveFolder(id)
 }

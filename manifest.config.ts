@@ -3,16 +3,18 @@ import { defineManifest } from '@crxjs/vite-plugin'
 export default defineManifest({
   manifest_version: 3,
   name: 'Spaces',
-  version: '0.1.0',
-  description: 'Arc-like workspace switcher: Tab Group based Spaces with GitHub PR live folders',
-  permissions: ['tabs', 'tabGroups', 'storage', 'alarms', 'contextMenus'],
+  version: '0.2.0',
+  description: 'Arc-like sidebar for Chrome: Spaces, nested folders, GitHub Live folders.',
+  permissions: ['tabs', 'tabGroups', 'storage', 'alarms', 'contextMenus', 'sidePanel'],
   host_permissions: ['https://api.github.com/*'],
   background: {
     service_worker: 'src/background/index.ts',
     type: 'module',
   },
+  side_panel: {
+    default_path: 'src/sidepanel/index.html',
+  },
   action: {
-    default_popup: 'src/popup/index.html',
     default_title: 'Spaces',
   },
   commands: {
@@ -27,5 +29,6 @@ export default defineManifest({
     'switch-space-9': { description: 'Switch to Space 9' },
     'new-space': { description: 'Create new Space' },
     'reset-current-tab': { description: 'Reset current tab to its base URL' },
+    'sync-current-live': { description: 'Sync the Live folder of the current tab' },
   },
 })

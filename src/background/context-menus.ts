@@ -1,33 +1,25 @@
 import {
-  findSpaceByGroupId,
   pinTab,
   resetTabToBase,
   unpinTab,
+  walkFolders,
 } from './space-manager'
-import { syncLiveSpace } from './live/sync-engine'
-import { isLive, TAB_GROUP_ID_NONE } from '../shared/types'
+import { syncLiveFolder } from './live/sync-engine'
+import { loadStore } from './storage'
 
 const ITEM_PIN = 'spaces:pin-tab'
 const ITEM_UNPIN = 'spaces:unpin-tab'
 const ITEM_RESET = 'spaces:reset-tab'
 const ITEM_SYNC_LIVE = 'spaces:sync-live'
+const ITEM_SYNC_LIVE_ACTION = 'spaces:sync-live-action'
 
-// Restrict every entry to http(s) pages — without this, 'page' also fires
-// in the extension's own popup (chrome-extension://...) which leaks the
-// items into right-clicks on Space rows.
 const WEB_PAGES = ['http://*/*', 'https://*/*']
 
 export async function installContextMenus(): Promise<void> {
-  // Re-create from scratch every install/startup so that label or order
-  // changes ship without leaving stale entries behind.
-  chrome.contextMenus.removeAll()
+  await chrome.contextMenus.removeAll()
   chrome.contextMenus.create({
     id: ITEM_SYNC_LIVE,
     title: 'Sync this Live folder',
-    // Chrome's contextMenus API does not actually accept a 'tab' context at
-    // runtime (despite some docs suggesting it); attaching to 'page' /
-    // 'frame' means the entry shows up when right-clicking the page of a
-    // Live folder PR/issue. Non-live pages just no-op the click.
     contexts: ['page', 'frame'],
     documentUrlPatterns: WEB_PAGES,
   })
@@ -49,6 +41,11 @@ export async function installContextMenus(): Promise<void> {
     contexts: ['page', 'frame'],
     documentUrlPatterns: WEB_PAGES,
   })
+  chrome.contextMenus.create({
+    id: ITEM_SYNC_LIVE_ACTION,
+    title: 'Sync this Live folder',
+    contexts: ['action'],
+  })
 }
 
 export async function handleContextMenuClick(
@@ -69,14 +66,30 @@ export async function handleContextMenuClick(
     case ITEM_RESET:
       await resetTabToBase(tab.id)
       return
-    case ITEM_SYNC_LIVE: {
-      if (typeof tab.groupId !== 'number' || tab.groupId === TAB_GROUP_ID_NONE) return
-      const space = await findSpaceByGroupId(tab.groupId, tab.windowId)
-      if (!space || !isLive(space)) return
-      await syncLiveSpace(space.id)
+    case ITEM_SYNC_LIVE:
+    case ITEM_SYNC_LIVE_ACTION: {
+      const folderId = await findLiveFolderForTab(tab.id)
+      if (folderId) await syncLiveFolder(folderId)
       return
     }
   }
 }
 
-export const _ITEM_IDS = { ITEM_PIN, ITEM_UNPIN, ITEM_RESET, ITEM_SYNC_LIVE }
+async function findLiveFolderForTab(tabId: number): Promise<string | undefined> {
+  const store = await loadStore()
+  for (const sp of Object.values(store.spaces)) {
+    for (const folder of walkFolders(store, sp.rootFolderId)) {
+      if (!folder.live) continue
+      if (folder.live.managedTabs.some((m) => m.tabId === tabId)) return folder.id
+    }
+  }
+  return undefined
+}
+
+export const _ITEM_IDS = {
+  ITEM_PIN,
+  ITEM_UNPIN,
+  ITEM_RESET,
+  ITEM_SYNC_LIVE,
+  ITEM_SYNC_LIVE_ACTION,
+}

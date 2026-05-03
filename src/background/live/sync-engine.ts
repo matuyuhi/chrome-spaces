@@ -1,72 +1,103 @@
 import {
-  type LiveSpace,
+  type Folder,
+  type FolderId,
   type ManagedTab,
-  type SpaceId,
-  isLive,
-  TAB_GROUP_ID_NONE,
+  type SpaceStore,
+  isLiveFolder,
 } from '../../shared/types'
 import { loadStore, updateStore } from '../storage'
 import { getGitHubToken } from '../secret-storage'
-import { createTabInExistingGroup } from '../inflight'
 import { fetchSearchResults, GitHubError, type ItemRef } from './sources/github'
 import { diff } from './diff'
 
 const now = (): number => Date.now()
 
-export async function syncLiveSpace(
-  spaceId: SpaceId,
+export async function syncLiveFolder(
+  folderId: FolderId,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const initial = (await loadStore()).spaces[spaceId]
-  if (!initial || !isLive(initial)) return
+  const store = await loadStore()
+  const folder = store.folders[folderId]
+  if (!folder || !isLiveFolder(folder)) return
+
+  // The Folder must belong to a Space (find by walking from each Space's
+  // root). We need the windowId for tab creation.
+  let windowId: number | undefined
+  for (const sp of Object.values(store.spaces)) {
+    const reachable = reachableFolders(store, sp.rootFolderId)
+    if (reachable.has(folderId)) {
+      windowId = sp.windowId
+      break
+    }
+  }
+  if (windowId === undefined) return
 
   try {
-    const items = await fetchItems(initial, fetchImpl)
-    await applyDiff(initial, items)
+    const items = await fetchItems(folder, fetchImpl)
+    await applyDiff(folder, items, windowId)
     await updateStore((s) => {
-      const sp = s.spaces[spaceId]
-      if (sp && isLive(sp)) {
-        sp.lastSyncAt = now()
-        sp.lastSyncError = undefined
+      const f = s.folders[folderId]
+      if (f && f.live) {
+        f.live.lastSyncAt = now()
+        f.live.lastSyncError = undefined
       }
     })
   } catch (err) {
     const message = formatError(err)
     await updateStore((s) => {
-      const sp = s.spaces[spaceId]
-      if (sp && isLive(sp)) {
-        sp.lastSyncError = message
-        sp.lastSyncAt = now()
+      const f = s.folders[folderId]
+      if (f && f.live) {
+        f.live.lastSyncError = message
+        f.live.lastSyncAt = now()
       }
     })
   }
 }
 
-async function fetchItems(space: LiveSpace, fetchImpl: typeof fetch): Promise<ItemRef[]> {
-  if (space.source.type === 'github-prs' || space.source.type === 'github-issues') {
-    const token = await getGitHubToken()
-    if (!token) throw new Error('GitHub token not configured. Open Spaces popup → Settings → paste a PAT.')
-    return fetchSearchResults(space.source, token, fetchImpl)
+function reachableFolders(store: SpaceStore, rootFolderId: FolderId): Set<FolderId> {
+  const seen = new Set<FolderId>()
+  const stack = [rootFolderId]
+  while (stack.length) {
+    const id = stack.pop()!
+    if (seen.has(id)) continue
+    seen.add(id)
+    const f = store.folders[id]
+    if (!f) continue
+    for (const it of f.items) {
+      if (it.kind === 'folder') stack.push(it.folderId)
+    }
   }
-  throw new Error(`Unsupported live source: ${(space.source as { type: string }).type}`)
+  return seen
 }
 
-async function applyDiff(space: LiveSpace, items: ItemRef[]): Promise<void> {
-  if (space.groupId === TAB_GROUP_ID_NONE) return // group is gone; reconcile will handle
+async function fetchItems(folder: Folder, fetchImpl: typeof fetch): Promise<ItemRef[]> {
+  if (!folder.live) return []
+  if (folder.live.source.type === 'github-prs' || folder.live.source.type === 'github-issues') {
+    const token = await getGitHubToken()
+    if (!token)
+      throw new Error(
+        'GitHub token not configured. Open Spaces side panel → Settings → paste a PAT.',
+      )
+    return fetchSearchResults(folder.live.source, token, fetchImpl)
+  }
+  throw new Error(
+    `Unsupported live source: ${(folder.live.source as { type: string }).type}`,
+  )
+}
 
-  const result = diff(space.managedTabs, items)
+async function applyDiff(
+  folder: Folder,
+  items: ItemRef[],
+  windowId: number,
+): Promise<void> {
+  if (!folder.live) return
+  const result = diff(folder.live.managedTabs, items)
 
   const created: ManagedTab[] = []
   for (const item of result.toAdd) {
     try {
-      // createTabInExistingGroup pauses onTabCreated auto-grouping for the
-      // create+group window so the tab cannot be hijacked into whatever
-      // Space happens to be active in this window.
-      const tab = await createTabInExistingGroup(
-        { url: item.url, windowId: space.windowId, active: false },
-        space.groupId,
-      )
-      if (!tab || typeof tab.id !== 'number') continue
+      const tab = await chrome.tabs.create({ url: item.url, windowId, active: false })
+      if (typeof tab.id !== 'number') continue
       created.push({
         externalId: item.externalId,
         url: item.url,
@@ -92,12 +123,10 @@ async function applyDiff(space: LiveSpace, items: ItemRef[]): Promise<void> {
     ...created,
   ]
 
-  // Clean up the seed tab once we have real managed tabs.
   let starterToClose: number | undefined
-  if (space.starterTabId !== undefined && finalManaged.length > 0) {
-    starterToClose = space.starterTabId
+  if (folder.live.starterTabId !== undefined && finalManaged.length > 0) {
+    starterToClose = folder.live.starterTabId
   }
-
   if (starterToClose !== undefined) {
     try {
       await chrome.tabs.remove(starterToClose)
@@ -107,10 +136,30 @@ async function applyDiff(space: LiveSpace, items: ItemRef[]): Promise<void> {
   }
 
   await updateStore((s) => {
-    const sp = s.spaces[space.id]
-    if (!sp || !isLive(sp)) return
-    sp.managedTabs = finalManaged
-    if (starterToClose !== undefined) sp.starterTabId = undefined
+    const f = s.folders[folder.id]
+    if (!f || !f.live) return
+    f.live.managedTabs = finalManaged
+    if (starterToClose !== undefined) f.live.starterTabId = undefined
+    // Sync the folder's items list with managedTabs (Live folders own
+    // their items deterministically — no manual reordering inside).
+    f.items = finalManaged.map((m) => ({ kind: 'tab' as const, tabId: m.tabId }))
+    // chrome.tabs.onCreated may have fired between our chrome.tabs.create
+    // call and this updateStore, in which case handlers.registerTab
+    // already appended the new tab to the active Space's root folder.
+    // Strip those tabIds from any folder that isn't this Live one so the
+    // tab is owned by exactly one place.
+    const claimed = new Set(finalManaged.map((m) => m.tabId))
+    for (const other of Object.values(s.folders)) {
+      if (other.id === folder.id) continue
+      other.items = other.items.filter(
+        (it) => !(it.kind === 'tab' && claimed.has(it.tabId)),
+      )
+    }
+    // TabRecord registration for the new tabs.
+    for (const m of finalManaged) {
+      if (!s.tabs[m.tabId]) s.tabs[m.tabId] = { tabId: m.tabId, windowId }
+    }
+    for (const t of result.toRemove) delete s.tabs[t.tabId]
   })
 }
 
