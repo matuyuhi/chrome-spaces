@@ -377,7 +377,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       </Section>
 
       <Section>
-        <h2>GitHub OAuth (Device Flow)</h2>
+        <h2>GitHub credential</h2>
+        <p className="muted">
+          Live folders need a GitHub credential. Pick whichever option fits —
+          OAuth gives revocable, per-app access; a PAT is faster to set up if
+          you already have one.
+        </p>
+      </Section>
+
+      <Section>
+        <h2>Option A — Sign in with OAuth (Device Flow)</h2>
         <p className="muted">
           Sign in via a GitHub OAuth App you control. Create one at{' '}
           <a
@@ -435,11 +444,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       </Section>
 
       <Section>
-        <h2>GitHub PAT</h2>
+        <h2>Option B — Personal Access Token</h2>
         <p className="muted">
-          Alternative to OAuth — paste a Personal Access Token. Used by Live
-          Folders. Stored only in <code>chrome.storage.local</code> on this
-          device.
+          Paste a PAT directly. Stored only in{' '}
+          <code>chrome.storage.local</code> on this device — never synced.
         </p>
         <p className="muted">
           Status:{' '}
