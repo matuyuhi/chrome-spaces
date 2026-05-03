@@ -46,3 +46,17 @@ export const EditCustom: Story = {
     },
   },
 }
+
+export const EditRss: Story = {
+  args: {
+    mode: 'edit',
+    initial: {
+      name: 'Daring Fireball',
+      source: {
+        type: 'rss',
+        url: 'https://daringfireball.net/feeds/main',
+      },
+      refreshIntervalMin: 30,
+    },
+  },
+}

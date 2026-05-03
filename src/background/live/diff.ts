@@ -1,18 +1,18 @@
 import { type ManagedTab } from '../../shared/types'
-import { type ItemRef } from './sources/github'
+import { type LiveItem } from './sources/types'
 
 export interface DiffResult {
-  toAdd: ItemRef[]
+  toAdd: LiveItem[]
   toRemove: ManagedTab[]
-  toKeep: { managed: ManagedTab; fetched: ItemRef }[]
+  toKeep: { managed: ManagedTab; fetched: LiveItem }[]
 }
 
-export function diff(currentTabs: ManagedTab[], fetchedItems: ItemRef[]): DiffResult {
+export function diff(currentTabs: ManagedTab[], fetchedItems: LiveItem[]): DiffResult {
   const currentByExt = new Map(currentTabs.map((t) => [t.externalId, t]))
   const fetchedByExt = new Map(fetchedItems.map((i) => [i.externalId, i]))
 
-  const toAdd: ItemRef[] = []
-  const toKeep: { managed: ManagedTab; fetched: ItemRef }[] = []
+  const toAdd: LiveItem[] = []
+  const toKeep: { managed: ManagedTab; fetched: LiveItem }[] = []
   for (const item of fetchedItems) {
     const existing = currentByExt.get(item.externalId)
     if (existing) toKeep.push({ managed: existing, fetched: item })

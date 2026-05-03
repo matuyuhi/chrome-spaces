@@ -6,13 +6,8 @@ import {
   isLiveFolder,
 } from '../../shared/types'
 import { loadStore, updateStore } from '../storage'
-import { getGitHubApiBaseUrl, getGitHubToken } from '../secret-storage'
-import {
-  fetchSearchResults,
-  GitHubError,
-  type ItemRef,
-  type SearchResult,
-} from './sources/github'
+import { dispatchFetch, type SearchResult, SourceError } from './sources'
+import { type LiveItem } from './sources/types'
 import { diff } from './diff'
 
 const now = (): number => Date.now()
@@ -105,27 +100,15 @@ function reachableFolders(store: SpaceStore, rootFolderId: FolderId): Set<Folder
 
 async function fetchItems(folder: Folder, fetchImpl: typeof fetch): Promise<SearchResult> {
   if (!folder.live) return { notModified: false, items: [] }
-  if (folder.live.source.type === 'github-prs' || folder.live.source.type === 'github-issues') {
-    const token = await getGitHubToken()
-    if (!token)
-      throw new Error(
-        'GitHub token not configured. Open Spaces side panel → Settings → paste a PAT.',
-      )
-    const apiBaseUrl = await getGitHubApiBaseUrl()
-    return fetchSearchResults(folder.live.source, token, {
-      etag: folder.live.etag,
-      fetch: fetchImpl,
-      apiBaseUrl,
-    })
-  }
-  throw new Error(
-    `Unsupported live source: ${(folder.live.source as { type: string }).type}`,
-  )
+  return dispatchFetch(folder.live.source, {
+    etag: folder.live.etag,
+    fetch: fetchImpl,
+  })
 }
 
 async function applyDiff(
   folder: Folder,
-  items: ItemRef[],
+  items: LiveItem[],
   windowId: number,
 ): Promise<void> {
   if (!folder.live) return
@@ -202,7 +185,8 @@ async function applyDiff(
 }
 
 function formatError(err: unknown): string {
-  if (err instanceof GitHubError) return `GitHub ${err.status}: ${err.message.slice(0, 200)}`
+  if (err instanceof SourceError)
+    return `[${err.status}] ${err.message.slice(0, 200)}`
   if (err instanceof Error) return err.message
   return String(err)
 }
