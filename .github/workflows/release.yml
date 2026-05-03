@@ -22,12 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.1
         with:
           fetch-depth: 0
           ref: main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -67,7 +67,7 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           gh release create "${{ steps.bump.outputs.tag }}" \
             --title "${{ steps.bump.outputs.tag }}" \
@@ -78,13 +78,18 @@ jobs:
       - name: Open PR to main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.bump.outputs.tag }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
         run: |
+          {
+            echo "Automated release PR for **${TAG}**."
+            echo
+            echo "Tag and GitHub Release are already published — merging this PR brings the version bump back into \`main\`."
+            echo
+            echo "Use **Merge commit** (not squash) so the tagged commit stays in main's history."
+          } > pr-body.md
           gh pr create \
             --base main \
-            --head "${{ steps.bump.outputs.branch }}" \
-            --title "chore(release): ${{ steps.bump.outputs.tag }}" \
-            --body "Automated release PR for **${{ steps.bump.outputs.tag }}**.
-
-Tag and GitHub Release are already published — merging this PR brings the version bump back into \`main\`.
-
-Use **Merge commit** (not squash) so the tagged commit stays in main's history."
+            --head "${BRANCH}" \
+            --title "chore(release): ${TAG}" \
+            --body-file pr-body.md
