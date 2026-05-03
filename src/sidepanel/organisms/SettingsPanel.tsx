@@ -104,6 +104,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [hasToken, setHasToken] = useState<boolean | undefined>(undefined)
   const [saved, setSaved] = useState(false)
   const [fontSize, setFontSize] = useState<UIFontSize>(3)
+  const [autoArchiveDays, setAutoArchiveDays] = useState(0)
+  const [archiveSavedAt, setArchiveSavedAt] = useState<number | undefined>()
   const [baseUrl, setBaseUrl] = useState('')
   const [baseUrlIsCustom, setBaseUrlIsCustom] = useState(false)
   const [baseUrlStatus, setBaseUrlStatus] = useState<string | undefined>()
@@ -123,9 +125,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     void sendMessage({ type: 'getGitHubToken' }).then(({ hasToken }) =>
       setHasToken(hasToken),
     )
-    void sendMessage({ type: 'getUIPrefs' }).then((prefs) =>
-      setFontSize(prefs.fontSize),
-    )
+    void sendMessage({ type: 'getUIPrefs' }).then((prefs) => {
+      setFontSize(prefs.fontSize)
+      setAutoArchiveDays(prefs.autoArchiveDays)
+    })
     void sendMessage({ type: 'getGitHubApiBaseUrl' }).then(({ url, isCustom }) => {
       setBaseUrl(isCustom ? url : '')
       setBaseUrlIsCustom(isCustom)
@@ -147,6 +150,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setFontSize(size)
     applyFontSize(size)
     await sendMessage({ type: 'setUIPrefs', prefs: { fontSize: size } })
+  }
+
+  const handleArchiveDays = async (raw: string) => {
+    const n = Math.max(0, Math.min(365, Math.floor(Number(raw) || 0)))
+    setAutoArchiveDays(n)
+    await sendMessage({ type: 'setUIPrefs', prefs: { autoArchiveDays: n } })
+    setArchiveSavedAt(Date.now())
+    setTimeout(() => setArchiveSavedAt(undefined), 1500)
   }
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -313,6 +324,27 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             </SizeBtn>
           ))}
         </SizePicker>
+      </Section>
+
+      <Section>
+        <h2>Auto-archive</h2>
+        <p className="muted">
+          Move tabs you haven't touched in N days into a per-Space{' '}
+          <code>Archive</code> folder. Live folder tabs are never archived.
+          Set 0 to disable. Runs once a day.
+        </p>
+        <Actions>
+          <input
+            type="number"
+            min={0}
+            max={365}
+            value={autoArchiveDays}
+            onChange={(e) => void handleArchiveDays(e.target.value)}
+            style={{ width: 80 }}
+          />
+          <span className="muted">days (0 = disabled)</span>
+          {archiveSavedAt && <span className="muted">Saved.</span>}
+        </Actions>
       </Section>
 
       <Section>

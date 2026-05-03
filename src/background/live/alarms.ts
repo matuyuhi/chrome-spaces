@@ -1,6 +1,7 @@
 import { loadStore } from '../storage'
 import { type FolderId } from '../../shared/types'
 import { syncLiveFolder } from './sync-engine'
+import { archiveStaleTabs, AUTO_ARCHIVE_ALARM } from '../auto-archive'
 
 const ALARM_PREFIX = 'live-folder:'
 
@@ -52,6 +53,10 @@ export async function reconcileAlarms(): Promise<void> {
 }
 
 export function handleAlarm(alarm: chrome.alarms.Alarm): void {
+  if (alarm.name === AUTO_ARCHIVE_ALARM) {
+    void archiveStaleTabs()
+    return
+  }
   const id = folderIdFromAlarm(alarm.name)
   if (!id) return
   void syncLiveFolder(id)
