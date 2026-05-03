@@ -57,11 +57,21 @@ export function App() {
   >()
 
   const refresh = useCallback(async () => {
-    const win = await chrome.windows.getCurrent()
-    if (typeof win.id !== 'number') return
-    setWindowId(win.id)
-    setSpaces(await listSpaces(win.id))
-    setActiveId((await getActiveSpace(win.id))?.id)
+    try {
+      const win = await chrome.windows.getCurrent()
+      if (typeof win.id !== 'number') return
+      setWindowId(win.id)
+      setSpaces(await listSpaces(win.id))
+      setActiveId((await getActiveSpace(win.id))?.id)
+    } catch (e) {
+      // chrome.windows.getCurrent rejects with "No current window" if the
+      // popup is opened from a context without an associated window
+      // (e.g., devtools-only Chrome session). Surface to the banner
+      // instead of becoming an unhandled rejection.
+      const message = e instanceof Error ? e.message : String(e)
+      console.error('[Spaces] popup refresh failed', e)
+      setError(`Could not load spaces: ${message}`)
+    }
   }, [])
 
   const handleDrop = useCallback(async () => {
@@ -129,7 +139,9 @@ export function App() {
               setView('list')
               setEditLiveId(undefined)
               await refresh()
-              void sendMessage({ type: 'syncLive', spaceId: editLiveId }).then(() => refresh())
+              sendMessage({ type: 'syncLive', spaceId: editLiveId })
+                .then(() => refresh())
+                .catch((err) => console.error('[Spaces] post-edit syncLive failed', err))
             } catch (e) {
               const message = e instanceof Error ? e.message : String(e)
               console.error('[Spaces] updateLiveSpace failed', e)
@@ -164,7 +176,9 @@ export function App() {
               })
               setView('list')
               await refresh()
-              void sendMessage({ type: 'syncLive', spaceId: space.id }).then(() => refresh())
+              sendMessage({ type: 'syncLive', spaceId: space.id })
+                .then(() => refresh())
+                .catch((err) => console.error('[Spaces] post-create syncLive failed', err))
             } catch (e) {
               const message = e instanceof Error ? e.message : String(e)
               console.error('[Spaces] createLive failed', e)

@@ -45,6 +45,14 @@ export async function handleCommand(command: string, windowId: number): Promise<
 
 export async function resolveWindowId(tab?: chrome.tabs.Tab): Promise<number | undefined> {
   if (typeof tab?.windowId === 'number') return tab.windowId
-  const win = await chrome.windows.getCurrent()
-  return typeof win.id === 'number' ? win.id : undefined
+  try {
+    const win = await chrome.windows.getCurrent()
+    return typeof win.id === 'number' ? win.id : undefined
+  } catch {
+    // chrome.windows.getCurrent rejects with "No current window" when the
+    // service worker fires before any browser window has been focused
+    // (e.g., commands triggered while Chrome is reopening). Bail rather
+    // than tear down the surrounding void IIFE.
+    return undefined
+  }
 }
