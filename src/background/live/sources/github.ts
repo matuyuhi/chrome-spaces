@@ -42,28 +42,43 @@ export function buildQuery(source: LiveSource): string {
   if (source.type === 'github-prs') {
     if (source.preset === 'custom') return source.query
     const userSpec = source.user?.trim() || '@me'
-    switch (source.preset) {
-      case 'review-requested':
-        return `is:pr is:open review-requested:${userSpec}`
-      case 'assigned':
-        return `is:pr is:open assignee:${userSpec}`
-      case 'authored':
-        return `is:pr is:open author:${userSpec}`
-    }
+    const base = (() => {
+      switch (source.preset) {
+        case 'review-requested':
+          return `is:pr is:open review-requested:${userSpec}`
+        case 'assigned':
+          return `is:pr is:open assignee:${userSpec}`
+        case 'authored':
+          return `is:pr is:open author:${userSpec}`
+      }
+    })()
+    return appendRepoFilter(base, source.repoFilter)
   }
   if (source.type === 'github-issues') {
     if (source.preset === 'custom') return source.query
     const userSpec = source.user?.trim() || '@me'
-    switch (source.preset) {
-      case 'assigned':
-        return `is:issue is:open assignee:${userSpec}`
-      case 'authored':
-        return `is:issue is:open author:${userSpec}`
-      case 'mentioned':
-        return `is:issue is:open mentions:${userSpec}`
-    }
+    const base = (() => {
+      switch (source.preset) {
+        case 'assigned':
+          return `is:issue is:open assignee:${userSpec}`
+        case 'authored':
+          return `is:issue is:open author:${userSpec}`
+        case 'mentioned':
+          return `is:issue is:open mentions:${userSpec}`
+      }
+    })()
+    return appendRepoFilter(base, source.repoFilter)
   }
   throw new Error(`Unsupported source type: ${(source as { type: string }).type}`)
+}
+
+function appendRepoFilter(base: string, repoFilter: string | undefined): string {
+  const trimmed = repoFilter?.trim()
+  if (!trimmed || trimmed === '*') return base
+  // Already a qualifier (org:foo, user:foo, repo:foo/bar) — use verbatim.
+  if (trimmed.includes(':')) return `${base} ${trimmed}`
+  // Bare identifier — assume org.
+  return `${base} org:${trimmed}`
 }
 
 export function parseItem(item: SearchIssueItem): ItemRef {

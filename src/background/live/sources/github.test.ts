@@ -31,6 +31,42 @@ describe('buildQuery', () => {
       'is:pr is:open assignee:@me',
     )
   })
+
+  it('appends a bare repo filter as org:', () => {
+    expect(
+      buildQuery({ type: 'github-prs', preset: 'assigned', repoFilter: 'acme' }),
+    ).toBe('is:pr is:open assignee:@me org:acme')
+  })
+
+  it('uses an explicit qualifier verbatim', () => {
+    expect(
+      buildQuery({ type: 'github-prs', preset: 'authored', repoFilter: 'user:octocat' }),
+    ).toBe('is:pr is:open author:@me user:octocat')
+    expect(
+      buildQuery({
+        type: 'github-issues',
+        preset: 'assigned',
+        repoFilter: 'repo:foo/bar',
+      }),
+    ).toBe('is:issue is:open assignee:@me repo:foo/bar')
+  })
+
+  it('treats * and empty filter as no filter', () => {
+    expect(buildQuery({ type: 'github-prs', preset: 'assigned', repoFilter: '*' })).toBe(
+      'is:pr is:open assignee:@me',
+    )
+    expect(buildQuery({ type: 'github-prs', preset: 'assigned', repoFilter: '   ' })).toBe(
+      'is:pr is:open assignee:@me',
+    )
+  })
+
+  it('does not touch a custom preset (its query is verbatim)', () => {
+    // Custom preset has no repoFilter field by design; the user just
+    // writes the full query. Confirm the union narrows correctly.
+    expect(
+      buildQuery({ type: 'github-prs', preset: 'custom', query: 'is:pr label:bug' }),
+    ).toBe('is:pr label:bug')
+  })
 })
 
 describe('parseItem', () => {

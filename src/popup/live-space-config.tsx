@@ -53,7 +53,9 @@ function presetToSource(
   preset: FlatPreset,
   user: string,
   customQuery: string,
+  repoFilter: string,
 ): LiveSource | undefined {
+  const filter = repoFilter.trim() || undefined
   switch (preset) {
     case 'pr-review-requested':
     case 'pr-assigned':
@@ -62,6 +64,7 @@ function presetToSource(
         type: 'github-prs',
         preset: preset.slice(3) as 'review-requested' | 'assigned' | 'authored',
         user: user.trim() || undefined,
+        repoFilter: filter,
       }
     case 'pr-custom':
       return customQuery.trim()
@@ -74,6 +77,7 @@ function presetToSource(
         type: 'github-issues',
         preset: preset.slice(6) as 'assigned' | 'authored' | 'mentioned',
         user: user.trim() || undefined,
+        repoFilter: filter,
       }
     case 'issue-custom':
       return customQuery.trim()
@@ -123,6 +127,9 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
   const [user, setUser] = useState(
     initial && 'user' in initial.source ? (initial.source.user ?? '') : '',
   )
+  const [repoFilter, setRepoFilter] = useState(
+    initial && 'repoFilter' in initial.source ? (initial.source.repoFilter ?? '') : '',
+  )
   const [customQuery, setCustomQuery] = useState(
     initial && initial.source.preset === 'custom'
       ? initial.source.query
@@ -137,7 +144,7 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
     e.preventDefault()
     if (!name.trim() || submitting) return
 
-    const source = presetToSource(preset, user, customQuery)
+    const source = presetToSource(preset, user, customQuery, repoFilter)
     if (!source) return
 
     setSubmitting(true)
@@ -227,6 +234,17 @@ export function LiveSpaceForm({ mode = 'create', initial, defaultColor, onSubmit
             value={user}
             onChange={(e) => setUser(e.target.value)}
             placeholder="@me"
+          />
+        </label>
+      )}
+
+      {!isCustom && (
+        <label className="field">
+          <span>Filter (optional: empty/* = all repos)</span>
+          <input
+            value={repoFilter}
+            onChange={(e) => setRepoFilter(e.target.value)}
+            placeholder="acme  →  org:acme   (or org:foo, user:bar, repo:a/b)"
           />
         </label>
       )}

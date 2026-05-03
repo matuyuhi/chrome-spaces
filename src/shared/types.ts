@@ -25,10 +25,25 @@ export interface StaticSpace extends BaseSpace {
 
 export type GitHubPreset = 'review-requested' | 'assigned' | 'authored' | 'custom'
 
+// `repoFilter` narrows a preset query to a GitHub org / user / single repo.
+// Empty or "*" means no narrowing (everything the token can see). A bare
+// identifier ("acme") is interpreted as `org:acme`. A value already shaped
+// like a search qualifier (`org:acme`, `user:octocat`, `repo:foo/bar`) is
+// used verbatim, so power users can mix qualifiers.
 export type LiveSource =
-  | { type: 'github-prs'; preset: 'review-requested' | 'assigned' | 'authored'; user?: string }
+  | {
+      type: 'github-prs'
+      preset: 'review-requested' | 'assigned' | 'authored'
+      user?: string
+      repoFilter?: string
+    }
   | { type: 'github-prs'; preset: 'custom'; query: string }
-  | { type: 'github-issues'; preset: 'assigned' | 'authored' | 'mentioned'; user?: string }
+  | {
+      type: 'github-issues'
+      preset: 'assigned' | 'authored' | 'mentioned'
+      user?: string
+      repoFilter?: string
+    }
   | { type: 'github-issues'; preset: 'custom'; query: string }
 
 export interface ManagedTab {
