@@ -29,3 +29,14 @@ jobs:
 
       - name: Test (vitest + Storybook)
         run: npm test
+
+      # Chrome extensions still need a real (non-headless) browser on
+      # the Playwright-bundled Chromium, so the E2E suite runs headed
+      # under xvfb. `npm run test:e2e` rebuilds dist/ to keep the script
+      # self-contained for local use; on CI the build step above warmed
+      # the same dist/ so it's a near no-op.
+      - name: Install xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: E2E (Playwright + unpacked extension)
+        run: xvfb-run -a npm run test:e2e
