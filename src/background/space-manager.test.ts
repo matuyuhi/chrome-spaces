@@ -220,6 +220,41 @@ describe('space-manager', () => {
     expect((await listSpaces(1))[0]?.pinnedTabs).toBeUndefined()
   })
 
+  it('switchTo rehydrates a Space whose Tab Group was removed externally', async () => {
+    const space = await createStaticSpace({ name: 'Work', color: 'green', windowId: 1 })
+    const oldGroupId = space.groupId
+
+    // Simulate the user closing the Tab Group from Chrome's UI: tabs.onRemoved
+    // fires for every tab in the group, then tabGroups.onRemoved fires.
+    // Our handler marks groupId = TAB_GROUP_ID_NONE.
+    await import('./handlers').then(({ onTabGroupRemoved }) =>
+      onTabGroupRemoved({ id: oldGroupId, windowId: 1 } as chrome.tabGroups.TabGroup),
+    )
+    expect((await listSpaces(1))[0]?.groupId).toBe(-1)
+
+    await switchTo(space.id, 1)
+
+    const revived = (await listSpaces(1))[0]
+    expect(revived?.groupId).not.toBe(-1)
+    expect(revived?.groupId).not.toBe(oldGroupId)
+    expect(mock.groups.get(revived!.groupId)?.title).toBe('Work')
+    expect(mock.groups.get(revived!.groupId)?.color).toBe('green')
+  })
+
+  it('rehydrate clears pinnedTabs that referenced the dead group', async () => {
+    const space = await createStaticSpace({ name: 'Work', color: 'green', windowId: 1 })
+    const tab = await chrome.tabs.create({ windowId: 1, url: 'https://example.com/' })
+    await chrome.tabs.group({ tabIds: [tab.id!], groupId: space.groupId })
+    await pinTab(tab.id!, 'https://example.com/home')
+    expect((await listSpaces(1))[0]?.pinnedTabs?.[tab.id!]).toBe('https://example.com/home')
+
+    await import('./handlers').then(({ onTabGroupRemoved }) =>
+      onTabGroupRemoved({ id: space.groupId, windowId: 1 } as chrome.tabGroups.TabGroup),
+    )
+    await switchTo(space.id, 1)
+    expect((await listSpaces(1))[0]?.pinnedTabs).toBeUndefined()
+  })
+
   it('updateLiveSpace replaces source and re-schedules on interval change', async () => {
     const live = await createLiveSpace({
       name: 'Reviews',

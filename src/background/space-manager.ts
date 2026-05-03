@@ -16,6 +16,7 @@ import {
   unmarkStarterTab,
 } from './inflight'
 import { scheduleSync, unscheduleSync } from './live/alarms'
+import { syncLiveSpace } from './live/sync-engine'
 
 const now = (): number => Date.now()
 const uid = (): string => crypto.randomUUID()
@@ -291,9 +292,17 @@ export async function deleteSpace(id: SpaceId, options: { closeTabs: boolean }):
 
 export async function switchTo(spaceId: SpaceId, windowId?: number): Promise<void> {
   const store = await loadStore()
-  const target = store.spaces[spaceId]
+  let target = store.spaces[spaceId]
   if (!target) return
   const winId = windowId ?? target.windowId
+
+  // The Tab Group may have been removed outside the popup (right-click →
+  // Close group, or closing every tab in the group). The Space record was
+  // preserved with groupId = TAB_GROUP_ID_NONE; switching to it should
+  // resurrect the group rather than no-op.
+  if (target.groupId === TAB_GROUP_ID_NONE) {
+    target = await rehydrateSpace(target)
+  }
 
   // Persist active first so the onTabGroupUpdated handler does not see a
   // stale activeSpaceByWindow when our own tabGroups.update events fire,
@@ -379,6 +388,56 @@ export async function setLastActiveTab(windowId: number, tabId: number): Promise
     const space = s.spaces[id]
     if (space) space.lastActiveTabId = tabId
   })
+}
+
+async function rehydrateSpace(space: Space): Promise<Space> {
+  pauseAutoGrouping()
+  try {
+    const tab = await chrome.tabs.create({ windowId: space.windowId, active: false })
+    if (typeof tab.id !== 'number') throw new Error('Failed to create starter tab for rehydrate')
+    markStarterTab(tab.id)
+
+    let groupId: number
+    try {
+      groupId = await chrome.tabs.group({
+        createProperties: { windowId: space.windowId },
+        tabIds: [tab.id],
+      })
+      await safeTabGroupUpdate(groupId, {
+        title: space.name,
+        color: space.color,
+        collapsed: false,
+      })
+    } finally {
+      unmarkStarterTab(tab.id)
+    }
+
+    let updated: Space = space
+    await updateStore((s) => {
+      const sp = s.spaces[space.id]
+      if (!sp) return
+      sp.groupId = groupId
+      sp.lastActiveTabId = tab.id
+      // pinnedTabs referenced tab ids that are gone with the old group.
+      sp.pinnedTabs = undefined
+      if (isLive(sp)) {
+        // Old managedTabs are gone with the old group; the next sync will
+        // refill from the source.
+        sp.managedTabs = []
+        sp.starterTabId = tab.id
+      }
+      updated = sp
+    })
+
+    if (isLive(updated)) {
+      // Don't await: the sync may take several seconds (network) and the
+      // caller is in the middle of a switchTo flow.
+      void syncLiveSpace(updated.id)
+    }
+    return updated
+  } finally {
+    resumeAutoGrouping()
+  }
 }
 
 export async function pinTab(tabId: number, baseUrl: string): Promise<Space | undefined> {
