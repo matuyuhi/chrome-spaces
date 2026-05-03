@@ -8,4 +8,5 @@ dist
 coverage
 .idea
 .vscode
+*storybook.log
 storybook-static

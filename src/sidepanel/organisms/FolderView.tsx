@@ -1,18 +1,54 @@
+import styled from '@emotion/styled'
 import { useState } from 'react'
-import { sendMessage } from '../shared/messaging'
-import { type Folder } from '../shared/types'
-import { useAppCtx } from './AppContext'
-import { type DropPos, dropPosKey, itemKey } from './dnd'
+import { sendMessage } from '../../shared/messaging'
+import { type Folder } from '../../shared/types'
+import { useAppCtx } from '../AppContext'
+import { type DropPos, dropPosKey, itemKey } from '../dnd'
 import { FolderMenu } from './menus'
 import { ItemRow } from './ItemRow'
+import { IconButton } from '../atoms/IconButton'
+import { LinkButton } from '../atoms/Button'
+import { NameInput } from '../atoms/NameInput'
 import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
-  LiveGraph,
   MoreHorizontal,
-  RefreshCw,
-} from './icons'
+} from '../atoms/icons'
+import {
+  FolderHeaderBox,
+  FolderName,
+  LiveErrorBadge,
+} from '../molecules/FolderHeader'
+import { RunCat } from '../molecules/RunCat'
+import { SyncButton } from '../molecules/SyncButton'
+
+// Hover-to-reveal driven by a static .add-row class instead of an
+// emotion component selector — same Storybook-runner constraint as
+// CloseButton / TabRow.
+const FolderBox = styled.div<{ isDragging?: boolean }>`
+  display: flex;
+  flex-direction: column;
+  opacity: ${(p) => (p.isDragging ? 0.4 : 1)};
+
+  &:hover .add-row {
+    opacity: 1;
+  }
+`
+
+const Items = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+`
+
+const AddRow = styled.div`
+  display: flex;
+  gap: 12px;
+  padding: 4px 0 6px;
+  opacity: 0;
+  transition: opacity 80ms ease;
+`
 
 interface Props {
   folder: Folder
@@ -37,25 +73,17 @@ export function FolderView({ folder, depth, isRoot }: Props) {
     ctx.drag?.kind === 'item' &&
     ctx.drag.item.kind === 'folder' &&
     ctx.drag.item.folderId === folder.id
-  // Cannot drop a folder into itself / a Live folder.
   const acceptsInto =
     ctx.drag?.kind === 'item' &&
     !isLive &&
-    !(
-      ctx.drag.item.kind === 'folder' && ctx.drag.item.folderId === folder.id
-    )
+    !(ctx.drag.item.kind === 'folder' && ctx.drag.item.folderId === folder.id)
 
   return (
-    <div className={`folder ${isDraggingThis ? 'is-dragging' : ''}`}>
+    <FolderBox isDragging={isDraggingThis}>
       {!isRoot && (
-        <div
-          className={[
-            'folder-header',
-            isDropInto && 'is-drop-into',
-            isLive && 'is-live',
-          ]
-            .filter(Boolean)
-            .join(' ')}
+        <FolderHeaderBox
+          isDropInto={isDropInto}
+          isLive={isLive}
           style={{ paddingLeft: depth * 12 }}
           draggable
           onDragStart={(e) => {
@@ -92,8 +120,7 @@ export function FolderView({ folder, depth, isRoot }: Props) {
               : undefined
           }
         >
-          <button
-            className="folder-toggle icon-btn"
+          <IconButton
             onClick={async () => {
               const next = !collapsed
               setCollapsed(next)
@@ -110,10 +137,10 @@ export function FolderView({ folder, depth, isRoot }: Props) {
             aria-label={collapsed ? 'Expand folder' : 'Collapse folder'}
           >
             {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-          </button>
+          </IconButton>
           {editingName ? (
-            <input
-              className="name-input small"
+            <NameInput
+              small
               autoFocus
               value={draftName}
               onChange={(e) => setDraftName(e.target.value)}
@@ -141,29 +168,27 @@ export function FolderView({ folder, depth, isRoot }: Props) {
               }}
             />
           ) : (
-            <span className="folder-name">
+            <FolderName>
               {isLive && (
-                <span
-                  className={`live-graph-wrap ${liveError ? 'has-error' : ''}`}
+                <RunCat
+                  size={24}
+                  hasError={!!liveError}
                   title={liveError ?? 'Live folder'}
-                >
-                  <LiveGraph size={20} />
-                </span>
+                />
               )}
               {folder.emoji ? `${folder.emoji} ` : null}
               {folder.name}
               {isLive && liveError && (
-                <span className="live-error" title={liveError}>
+                <LiveErrorBadge title={liveError}>
                   <AlertTriangle size={12} />
-                </span>
+                </LiveErrorBadge>
               )}
-            </span>
+            </FolderName>
           )}
           {isLive && (
-            <button
-              className={`icon-btn sync-btn ${syncing ? 'is-syncing' : ''}`}
+            <SyncButton
+              syncing={syncing}
               title={liveError ?? 'Sync now'}
-              disabled={syncing}
               onClick={async () => {
                 if (syncing) return
                 setSyncing(true)
@@ -173,18 +198,12 @@ export function FolderView({ folder, depth, isRoot }: Props) {
                 } catch (e) {
                   ctx.onError(e)
                 } finally {
-                  // Hold the spin a bit so a snappy network response still
-                  // gives visible feedback, then let go.
                   setTimeout(() => setSyncing(false), 350)
                 }
               }}
-              aria-label="Sync"
-            >
-              <RefreshCw size={14} className="sync-icon" />
-            </button>
+            />
           )}
-          <button
-            className="icon-btn"
+          <IconButton
             onClick={(e) => {
               e.stopPropagation()
               ctx.setOpenMenu(ctx.openMenu === menuId ? undefined : menuId)
@@ -192,7 +211,7 @@ export function FolderView({ folder, depth, isRoot }: Props) {
             aria-label="Folder menu"
           >
             <MoreHorizontal size={14} />
-          </button>
+          </IconButton>
           {ctx.openMenu === menuId && (
             <FolderMenu
               folder={folder}
@@ -233,11 +252,11 @@ export function FolderView({ folder, depth, isRoot }: Props) {
               }}
             />
           )}
-        </div>
+        </FolderHeaderBox>
       )}
 
       {!collapsed && (
-        <div className="folder-items">
+        <Items>
           {folder.items.map((it, idx) => (
             <ItemRow
               key={itemKey(it, idx)}
@@ -249,9 +268,8 @@ export function FolderView({ folder, depth, isRoot }: Props) {
             />
           ))}
           {!isLive && (
-            <div className="folder-add" style={{ paddingLeft: (depth + 1) * 12 }}>
-              <button
-                className="btn-link"
+            <AddRow className="add-row" style={{ paddingLeft: (depth + 1) * 12 }}>
+              <LinkButton
                 onClick={async () => {
                   const name = prompt('Folder name?')
                   if (!name?.trim()) return
@@ -270,14 +288,14 @@ export function FolderView({ folder, depth, isRoot }: Props) {
                 }}
               >
                 + Folder
-              </button>
-              <button className="btn-link" onClick={() => ctx.onCreateLive(folder.id)}>
+              </LinkButton>
+              <LinkButton onClick={() => ctx.onCreateLive(folder.id)}>
                 + Live folder
-              </button>
-            </div>
+              </LinkButton>
+            </AddRow>
           )}
-        </div>
+        </Items>
       )}
-    </div>
+    </FolderBox>
   )
 }

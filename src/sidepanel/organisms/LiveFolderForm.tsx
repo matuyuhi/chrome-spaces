@@ -1,5 +1,33 @@
+import styled from '@emotion/styled'
 import { useState, type FormEvent } from 'react'
-import { type LiveSource } from '../shared/types'
+import { type LiveSource } from '../../shared/types'
+import { Field } from '../atoms/Field'
+import { LinkButton, PrimaryButton, SecondaryButton } from '../atoms/Button'
+
+const Form = styled.form`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+`
+
+const FormHeader = styled.header`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  h2 {
+    font-size: 13px;
+    margin: 0;
+    font-weight: 600;
+  }
+`
+
+const Actions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+`
 
 type FlatPreset =
   | 'pr-review-requested'
@@ -140,16 +168,16 @@ export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
   }
 
   return (
-    <form className="live-form" onSubmit={handleSubmit}>
-      <header className="form-header">
-        <button type="button" className="btn-link" onClick={onCancel}>
+    <Form onSubmit={handleSubmit}>
+      <FormHeader>
+        <LinkButton type="button" onClick={onCancel}>
           ← Back
-        </button>
+        </LinkButton>
         <h2>{isEdit ? 'Edit Live Folder' : 'New Live Folder'}</h2>
-      </header>
+      </FormHeader>
 
       {!isEdit && (
-        <label className="field">
+        <Field>
           <span>Name</span>
           <input
             autoFocus
@@ -158,10 +186,10 @@ export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
             required
             maxLength={40}
           />
-        </label>
+        </Field>
       )}
 
-      <label className="field">
+      <Field>
         <span>Source</span>
         <select
           value={preset}
@@ -182,42 +210,42 @@ export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
             ))}
           </optgroup>
         </select>
-      </label>
+      </Field>
 
       {!isCustom && (
-        <label className="field">
+        <Field>
           <span>User (default: @me)</span>
           <input
             value={user}
             onChange={(e) => setUser(e.target.value)}
             placeholder="@me"
           />
-        </label>
+        </Field>
       )}
 
       {!isCustom && (
-        <label className="field">
+        <Field>
           <span>Filter (empty/* = all; ! to exclude)</span>
           <input
             value={repoFilter}
             onChange={(e) => setRepoFilter(e.target.value)}
             placeholder="acme  !sb  org:foo  user:bar  repo:a/b"
           />
-        </label>
+        </Field>
       )}
 
       {isCustom && (
-        <label className="field">
+        <Field>
           <span>GitHub search query</span>
           <input
             value={customQuery}
             onChange={(e) => setCustomQuery(e.target.value)}
             placeholder={placeholderQueryFor(preset)}
           />
-        </label>
+        </Field>
       )}
 
-      <label className="field">
+      <Field>
         <span>Refresh interval (min; 0 = manual only)</span>
         <input
           type="number"
@@ -228,16 +256,16 @@ export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
             setIntervalMin(Math.max(0, Math.min(60, Number(e.target.value) || 0)))
           }
         />
-      </label>
+      </Field>
 
-      <div className="form-actions">
-        <button type="button" className="btn-secondary" onClick={onCancel}>
+      <Actions>
+        <SecondaryButton type="button" onClick={onCancel}>
           Cancel
-        </button>
-        <button type="submit" className="btn-primary" disabled={submitting}>
+        </SecondaryButton>
+        <PrimaryButton type="submit" disabled={submitting}>
           {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Create Live Folder'}
-        </button>
-      </div>
-    </form>
+        </PrimaryButton>
+      </Actions>
+    </Form>
   )
 }

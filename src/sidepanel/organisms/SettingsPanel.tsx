@@ -1,7 +1,103 @@
+import styled from '@emotion/styled'
 import { useEffect, useRef, useState } from 'react'
-import { sendMessage, type UIFontSize } from '../shared/messaging'
-import { type SpaceStore } from '../shared/types'
-import { applyFontSize, FONT_LABELS, FONT_SCALE } from './theme'
+import { sendMessage, type UIFontSize } from '../../shared/messaging'
+import { type SpaceStore } from '../../shared/types'
+import { applyFontSize, FONT_LABELS, FONT_SCALE, tokens } from '../theme'
+import { LinkButton, PrimaryButton, SecondaryButton } from '../atoms/Button'
+
+const Section = styled.section`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  h2 {
+    font-size: 11px;
+    margin: 0;
+    font-weight: 600;
+    color: ${tokens.muted};
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  input[type='password'],
+  input[type='text'] {
+    background: ${tokens.bg};
+    color: ${tokens.fg};
+    border: 1px solid ${tokens.border};
+    border-radius: ${tokens.radius.md};
+    padding: 6px 8px;
+    font: inherit;
+    outline: none;
+  }
+
+  a {
+    color: ${tokens.accent};
+  }
+
+  code {
+    background: ${tokens.bgSoft};
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .muted {
+    font-size: 11px;
+    color: ${tokens.muted};
+    margin: 0;
+    line-height: 1.5;
+  }
+`
+
+const Actions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`
+
+const SizePicker = styled.div`
+  display: flex;
+  gap: 4px;
+`
+
+const SizeBtn = styled.button<{ isCurrent?: boolean }>`
+  flex: 1;
+  background: ${(p) => (p.isCurrent ? tokens.accentSoft : tokens.bgSoft)};
+  color: ${(p) => (p.isCurrent ? tokens.accent : tokens.muted)};
+  border: none;
+  border-radius: ${tokens.radius.md};
+  padding: 8px 0;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 12px;
+  transition:
+    background ${tokens.duration.fast} ease,
+    color ${tokens.duration.fast} ease;
+
+  &:hover {
+    background: ${tokens.bgHover};
+    color: ${tokens.fg};
+  }
+`
+
+const Header = styled.header`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+
+  h1 {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin: 0;
+    flex: 1;
+    color: ${tokens.subtle};
+    text-transform: uppercase;
+  }
+`
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [token, setToken] = useState('')
@@ -82,45 +178,42 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <header className="header">
-        <button className="btn-link" onClick={onClose}>
-          ← Back
-        </button>
+      <Header>
+        <LinkButton onClick={onClose}>← Back</LinkButton>
         <h1>Settings</h1>
         <span />
-      </header>
-      <section className="settings-section">
+      </Header>
+
+      <Section>
         <h2>Font size</h2>
-        <div className="size-picker">
+        <SizePicker>
           {([1, 2, 3, 4, 5] as UIFontSize[]).map((s) => (
-            <button
+            <SizeBtn
               key={s}
-              className={`size-btn ${s === fontSize ? 'is-current' : ''}`}
+              isCurrent={s === fontSize}
               onClick={() => void handleSize(s)}
               title={`Scale ×${FONT_SCALE[s]}`}
             >
               {FONT_LABELS[s]}
-            </button>
+            </SizeBtn>
           ))}
-        </div>
-      </section>
-      <section className="settings-section">
+        </SizePicker>
+      </Section>
+
+      <Section>
         <h2>Backup</h2>
         <p className="muted">
           Export saves Spaces / folders / Live configs to a JSON file. Import
           replaces the current setup with the file's contents (tab references
           are stripped — tabs themselves are session-scoped).
         </p>
-        <div className="settings-actions">
-          <button className="btn-secondary" onClick={() => void handleExport()}>
+        <Actions>
+          <SecondaryButton onClick={() => void handleExport()}>
             Export…
-          </button>
-          <button
-            className="btn-secondary"
-            onClick={() => fileInputRef.current?.click()}
-          >
+          </SecondaryButton>
+          <SecondaryButton onClick={() => fileInputRef.current?.click()}>
             Import…
-          </button>
+          </SecondaryButton>
           <input
             ref={fileInputRef}
             type="file"
@@ -129,21 +222,22 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             onChange={(e) => {
               const file = e.target.files?.[0]
               if (file) void handleImportFile(file)
-              e.target.value = '' // allow re-selecting the same file later
+              e.target.value = ''
             }}
           />
           {backupStatus && <span className="muted">{backupStatus}</span>}
-        </div>
-      </section>
+        </Actions>
+      </Section>
 
-      <section className="settings-section">
+      <Section>
         <h2>GitHub PAT</h2>
         <p className="muted">
           Used by Live Folders. Stored only in <code>chrome.storage.local</code> on
           this device.
         </p>
         <p className="muted">
-          Status: {hasToken === undefined ? '…' : hasToken ? '✓ token saved' : '— no token'}
+          Status:{' '}
+          {hasToken === undefined ? '…' : hasToken ? '✓ token saved' : '— no token'}
         </p>
         <input
           type="password"
@@ -152,16 +246,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           value={token}
           onChange={(e) => setToken(e.target.value)}
         />
-        <div className="settings-actions">
-          <button
-            className="btn-primary"
-            onClick={handleSave}
-            disabled={!token && !hasToken}
-          >
+        <Actions>
+          <PrimaryButton onClick={handleSave} disabled={!token && !hasToken}>
             {token ? 'Save token' : hasToken ? 'Clear token' : 'Save'}
-          </button>
+          </PrimaryButton>
           {saved && <span className="muted">Saved.</span>}
-        </div>
+        </Actions>
         <p className="muted">
           Required scopes: <code>repo</code> (private PRs/issues) or{' '}
           <code>public_repo</code>. Generate at{' '}
@@ -174,7 +264,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </a>
           .
         </p>
-      </section>
+      </Section>
     </>
   )
 }

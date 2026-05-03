@@ -1,24 +1,50 @@
+import styled from '@emotion/styled'
 import { useCallback, useEffect, useState } from 'react'
 import { sendMessage } from '../shared/messaging'
 import {
   type FolderId,
   type SpaceStore,
 } from '../shared/types'
-import { LiveFolderForm, type LiveFolderFormResult } from './LiveFolderForm'
-import { SettingsPanel } from './SettingsPanel'
-import { SpaceTab } from './SpaceTab'
-import { SpaceContent } from './SpaceContent'
-import { SpaceMenu } from './menus'
 import { AppCtxProvider, type AppCtx } from './AppContext'
-import { type DragState, type DropPos, type TabInfo, dropPosKey } from './dnd'
+import { type DragState, type DropPos, type TabInfo } from './dnd'
 import { COLORS, applyFontSize } from './theme'
-import { Download, Plus, Settings as SettingsIcon } from './icons'
+import { PanelHeader } from './organisms/Header'
+import { ErrorBanner } from './organisms/ErrorBanner'
+import { OrphanBanner } from './organisms/OrphanBanner'
+import { SpaceTabsList } from './organisms/SpaceTabsList'
+import { SpaceContent } from './organisms/SpaceContent'
+import {
+  LiveFolderForm,
+  type LiveFolderFormResult,
+} from './organisms/LiveFolderForm'
+import { SettingsPanel } from './organisms/SettingsPanel'
+import { GlobalStyles } from './globalStyles'
 
 type View =
   | { kind: 'list' }
   | { kind: 'settings' }
   | { kind: 'live-create'; parentFolderId: FolderId }
   | { kind: 'live-edit'; folderId: FolderId }
+
+const Root = styled.div`
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 6px;
+`
+
+const Empty = styled.p`
+  color: var(--subtle);
+  text-align: center;
+  font-size: 12px;
+  padding: 24px 0;
+`
+
+const Loading = styled.div`
+  padding: 16px;
+  color: var(--muted);
+`
 
 export function App() {
   const [windowId, setWindowId] = useState<number | undefined>()
@@ -30,10 +56,6 @@ export function App() {
   const [openMenu, setOpenMenu] = useState<string | undefined>()
   const [drag, setDrag] = useState<DragState | undefined>()
   const [dropPos, setDropPos] = useState<DropPos | undefined>()
-  // Tracks which side the pill's context menu should anchor to. Without
-  // this, a left-anchored menu opens off-screen for pills near the right
-  // edge of the panel, and vice-versa.
-  const [pillMenuAlign, setPillMenuAlign] = useState<'left' | 'right'>('left')
 
   const refresh = useCallback(async () => {
     try {
@@ -122,7 +144,7 @@ export function App() {
             toIndex = Number.MAX_SAFE_INTEGER
             break
           case 'reorder-space':
-            return // mismatched
+            return
         }
         await sendMessage({
           type: 'moveItem',
@@ -163,16 +185,11 @@ export function App() {
     }
   }, [refresh])
 
-  // Close any open menu on outside click. The native click that *opened*
-  // the menu would otherwise fire this listener too (React's synthetic
-  // bubble runs first, then native bubble reaches document) and close it
-  // immediately, so the listener is registered one task tick later.
-  // Clicks inside the menu itself are also ignored.
   useEffect(() => {
     if (!openMenu) return
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as Element | null
-      if (target?.closest('.menu')) return
+      if (target?.closest('[role="menu"]')) return
       setOpenMenu(undefined)
     }
     const t = window.setTimeout(
@@ -186,7 +203,12 @@ export function App() {
   }, [openMenu])
 
   if (!store || windowId === undefined) {
-    return <div className="loading">Loading…</div>
+    return (
+      <>
+        <GlobalStyles />
+        <Loading>Loading…</Loading>
+      </>
+    )
   }
 
   const handleError = (e: unknown) =>
@@ -194,44 +216,50 @@ export function App() {
 
   if (view.kind === 'settings') {
     return (
-      <div className="root">
-        <SettingsPanel onClose={() => setView({ kind: 'list' })} />
-      </div>
+      <>
+        <GlobalStyles />
+        <Root>
+          <SettingsPanel onClose={() => setView({ kind: 'list' })} />
+        </Root>
+      </>
     )
   }
 
   if (view.kind === 'live-create') {
     return (
-      <div className="root">
-        <LiveFolderForm
-          mode="create"
-          onCancel={() => setView({ kind: 'list' })}
-          onSubmit={async (input: LiveFolderFormResult) => {
-            try {
-              const folder = await sendMessage({
-                type: 'createFolder',
-                payload: {
-                  parentFolderId: view.parentFolderId,
-                  name: input.name,
-                  live: {
-                    source: input.source,
-                    refreshIntervalMin: input.refreshIntervalMin,
+      <>
+        <GlobalStyles />
+        <Root>
+          <LiveFolderForm
+            mode="create"
+            onCancel={() => setView({ kind: 'list' })}
+            onSubmit={async (input: LiveFolderFormResult) => {
+              try {
+                const folder = await sendMessage({
+                  type: 'createFolder',
+                  payload: {
+                    parentFolderId: view.parentFolderId,
+                    name: input.name,
+                    live: {
+                      source: input.source,
+                      refreshIntervalMin: input.refreshIntervalMin,
+                    },
                   },
-                },
-              })
-              setView({ kind: 'list' })
-              await refresh()
-              sendMessage({ type: 'syncLiveFolder', folderId: folder.id })
-                .then(() => refresh())
-                .catch((err) =>
-                  console.error('[Spaces] post-create sync', err),
-                )
-            } catch (e) {
-              handleError(e)
-            }
-          }}
-        />
-      </div>
+                })
+                setView({ kind: 'list' })
+                await refresh()
+                sendMessage({ type: 'syncLiveFolder', folderId: folder.id })
+                  .then(() => refresh())
+                  .catch((err) =>
+                    console.error('[Spaces] post-create sync', err),
+                  )
+              } catch (e) {
+                handleError(e)
+              }
+            }}
+          />
+        </Root>
+      </>
     )
   }
 
@@ -242,36 +270,39 @@ export function App() {
       return null
     }
     return (
-      <div className="root">
-        <LiveFolderForm
-          mode="edit"
-          initial={{
-            name: folder.name,
-            source: folder.live.source,
-            refreshIntervalMin: folder.live.refreshIntervalMin,
-          }}
-          onCancel={() => setView({ kind: 'list' })}
-          onSubmit={async (input: LiveFolderFormResult) => {
-            try {
-              await sendMessage({
-                type: 'updateLiveFolder',
-                folderId: view.folderId,
-                source: input.source,
-                refreshIntervalMin: input.refreshIntervalMin,
-              })
-              setView({ kind: 'list' })
-              await refresh()
-              sendMessage({ type: 'syncLiveFolder', folderId: view.folderId })
-                .then(() => refresh())
-                .catch((err) =>
-                  console.error('[Spaces] post-edit sync', err),
-                )
-            } catch (e) {
-              handleError(e)
-            }
-          }}
-        />
-      </div>
+      <>
+        <GlobalStyles />
+        <Root>
+          <LiveFolderForm
+            mode="edit"
+            initial={{
+              name: folder.name,
+              source: folder.live.source,
+              refreshIntervalMin: folder.live.refreshIntervalMin,
+            }}
+            onCancel={() => setView({ kind: 'list' })}
+            onSubmit={async (input: LiveFolderFormResult) => {
+              try {
+                await sendMessage({
+                  type: 'updateLiveFolder',
+                  folderId: view.folderId,
+                  source: input.source,
+                  refreshIntervalMin: input.refreshIntervalMin,
+                })
+                setView({ kind: 'list' })
+                await refresh()
+                sendMessage({ type: 'syncLiveFolder', folderId: view.folderId })
+                  .then(() => refresh())
+                  .catch((err) =>
+                    console.error('[Spaces] post-edit sync', err),
+                  )
+              } catch (e) {
+                handleError(e)
+              }
+            }}
+          />
+        </Root>
+      </>
     )
   }
 
@@ -281,10 +312,8 @@ export function App() {
   const activeId = store.activeSpaceByWindow[windowId]
   const active = spaces.find((s) => s.id === activeId) ?? spaces[0]
 
-  // Tabs in this window that aren't claimed by any folder anywhere. Common
-  // sources: tabs created while the SW was suspended, or leftovers from a
-  // deleteSpace({ closeTabs: false }). Hidden tabs are also excluded so we
-  // don't surface tabs that another Space's switch hid.
+  // Tabs in this window not claimed by any folder anywhere — surface in
+  // the orphan banner so the user can adopt them.
   const claimedTabIds = new Set<number>()
   for (const f of Object.values(store.folders)) {
     for (const it of f.items) if (it.kind === 'tab') claimedTabIds.add(it.tabId)
@@ -316,300 +345,88 @@ export function App() {
 
   return (
     <AppCtxProvider value={ctxValue}>
-      <div className="root">
-        <header className="header">
-          <h1>Spaces</h1>
-          <div className="header-actions">
-            {tabGroupCount > 0 && (
-              <button
-                className="btn-icon"
-                title={`Convert ${tabGroupCount} Chrome Tab Group${tabGroupCount === 1 ? '' : 's'} to Space${tabGroupCount === 1 ? '' : 's'}`}
-                onClick={async () => {
-                  try {
-                    await sendMessage({
-                      type: 'importChromeTabGroups',
-                      windowId,
-                    })
-                    await refresh()
-                  } catch (e) {
-                    handleError(e)
-                  }
-                }}
-              >
-                <Download size={14} />
-                <span className="btn-icon-count">{tabGroupCount}</span>
-              </button>
-            )}
-            <button
-              className="btn-icon"
-              title="New Space"
-              onClick={async () => {
-                try {
-                  await sendMessage({
-                    type: 'createSpace',
-                    payload: {
-                      name: `Space ${spaces.length + 1}`,
-                      color: COLORS[spaces.length % COLORS.length]!,
-                      windowId,
-                    },
-                  })
-                  await refresh()
-                } catch (e) {
-                  handleError(e)
-                }
-              }}
-              aria-label="New Space"
-            >
-              <Plus size={14} />
-            </button>
-            <button
-              className="btn-icon"
-              title="Settings"
-              onClick={() => setView({ kind: 'settings' })}
-              aria-label="Settings"
-            >
-              <SettingsIcon size={14} />
-            </button>
-          </div>
-        </header>
+      <GlobalStyles />
+      <Root>
+        <PanelHeader
+          tabGroupCount={tabGroupCount}
+          onImportTabGroups={async () => {
+            try {
+              await sendMessage({ type: 'importChromeTabGroups', windowId })
+              await refresh()
+            } catch (e) {
+              handleError(e)
+            }
+          }}
+          onNewSpace={async () => {
+            try {
+              await sendMessage({
+                type: 'createSpace',
+                payload: {
+                  name: `Space ${spaces.length + 1}`,
+                  color: COLORS[spaces.length % COLORS.length]!,
+                  windowId,
+                },
+              })
+              await refresh()
+            } catch (e) {
+              handleError(e)
+            }
+          }}
+          onOpenSettings={() => setView({ kind: 'settings' })}
+        />
 
         {error && (
-          <div className="error" role="alert">
-            {error}
-            <button
-              className="btn-link"
-              onClick={() => {
-                setError(undefined)
-                void refresh()
-              }}
-            >
-              dismiss
-            </button>
-          </div>
+          <ErrorBanner
+            message={error}
+            onDismiss={() => {
+              setError(undefined)
+              void refresh()
+            }}
+          />
         )}
 
-        {orphanTabIds.length > 0 && (
-          <div className="orphan-banner">
-            <span className="orphan-count">
-              {orphanTabIds.length} tab{orphanTabIds.length === 1 ? '' : 's'} not in any Space
-            </span>
-            {active && (
-              <button
-                className="btn-link"
-                title={`Add ${orphanTabIds.length} tab(s) to "${active.name}"`}
-                onClick={async () => {
-                  try {
-                    await sendMessage({
-                      type: 'addTabsToFolder',
-                      folderId: active.rootFolderId,
-                      tabIds: orphanTabIds,
-                    })
-                    await refresh()
-                  } catch (e) {
-                    handleError(e)
-                  }
-                }}
-              >
-                → current Space
-              </button>
-            )}
-            <button
-              className="btn-link"
-              title={`Create a new Space holding these ${orphanTabIds.length} tab(s)`}
-              onClick={async () => {
-                try {
-                  await sendMessage({
-                    type: 'createSpace',
-                    payload: {
-                      name: `Space ${spaces.length + 1}`,
-                      color: COLORS[spaces.length % COLORS.length]!,
-                      windowId,
-                      initialTabIds: orphanTabIds,
-                    },
-                  })
-                  await refresh()
-                } catch (e) {
-                  handleError(e)
-                }
-              }}
-            >
-              → new Space
-            </button>
-          </div>
-        )}
+        <OrphanBanner
+          count={orphanTabIds.length}
+          spaceName={active?.name}
+          onAddToCurrent={async () => {
+            if (!active) return
+            try {
+              await sendMessage({
+                type: 'addTabsToFolder',
+                folderId: active.rootFolderId,
+                tabIds: orphanTabIds,
+              })
+              await refresh()
+            } catch (e) {
+              handleError(e)
+            }
+          }}
+          onCreateNewSpace={async () => {
+            try {
+              await sendMessage({
+                type: 'createSpace',
+                payload: {
+                  name: `Space ${spaces.length + 1}`,
+                  color: COLORS[spaces.length % COLORS.length]!,
+                  windowId,
+                  initialTabIds: orphanTabIds,
+                },
+              })
+              await refresh()
+            } catch (e) {
+              handleError(e)
+            }
+          }}
+        />
 
-        <div className="space-tabs">
-          {spaces.map((sp) => {
-            const isDragSource = drag?.kind === 'space' && drag.spaceId === sp.id
-            const reorderHere =
-              drag?.kind === 'space' &&
-              !isDragSource &&
-              dropPos?.kind === 'reorder-space' &&
-              dropPos.targetSpaceId === sp.id
-                ? dropPos.position
-                : undefined
-            const pillMenuId = `spacepill:${sp.id}`
-            const isOpen = openMenu === pillMenuId
-            return (
-              <div
-                key={sp.id}
-                className={`space-tab-wrap menu-align-${isOpen ? pillMenuAlign : 'left'}`}
-              >
-                <SpaceTab
-                  space={sp}
-                  active={sp.id === active?.id}
-                  isDragging={isDragSource}
-                  isItemDropTarget={
-                    drag?.kind === 'item' &&
-                    dropPos?.kind === 'into-space' &&
-                    dropPos.spaceId === sp.id
-                  }
-                  reorderEdge={reorderHere}
-                  onClick={async () => {
-                    try {
-                      await sendMessage({
-                        type: 'switchTo',
-                        spaceId: sp.id,
-                        windowId,
-                      })
-                      await refresh()
-                    } catch (e) {
-                      handleError(e)
-                    }
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    if (openMenu === pillMenuId) {
-                      setOpenMenu(undefined)
-                      return
-                    }
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const panelWidth = document.documentElement.clientWidth
-                    setPillMenuAlign(
-                      rect.left + rect.width / 2 > panelWidth / 2 ? 'right' : 'left',
-                    )
-                    setOpenMenu(pillMenuId)
-                  }}
-                  onDragStart={(e) => {
-                    e.dataTransfer.effectAllowed = 'move'
-                    e.dataTransfer.setData('text/plain', sp.id)
-                    setDrag({ kind: 'space', spaceId: sp.id })
-                  }}
-                  onDragEnd={() => {
-                    setDrag(undefined)
-                    setDropPos(undefined)
-                  }}
-                  onDragOver={
-                    drag
-                      ? (e) => {
-                          e.preventDefault()
-                          e.dataTransfer.dropEffect = 'move'
-                          let next: DropPos
-                          if (drag.kind === 'space') {
-                            if (drag.spaceId === sp.id) return
-                            const rect = e.currentTarget.getBoundingClientRect()
-                            const before =
-                              e.clientX - rect.left < rect.width / 2
-                            next = {
-                              kind: 'reorder-space',
-                              targetSpaceId: sp.id,
-                              position: before ? 'before' : 'after',
-                            }
-                          } else {
-                            next = {
-                              kind: 'into-space',
-                              spaceId: sp.id,
-                              folderId: sp.rootFolderId,
-                            }
-                          }
-                          if (
-                            !dropPos ||
-                            dropPosKey(dropPos) !== dropPosKey(next)
-                          ) {
-                            setDropPos(next)
-                          }
-                        }
-                      : undefined
-                  }
-                  onDrop={
-                    drag
-                      ? (e) => {
-                          e.preventDefault()
-                          void finalizeDrop()
-                        }
-                      : undefined
-                  }
-                />
-                {openMenu === pillMenuId && (
-                  <SpaceMenu
-                    space={sp}
-                    onClose={() => setOpenMenu(undefined)}
-                    onRename={async () => {
-                      const name = prompt('New Space name?', sp.name)
-                      setOpenMenu(undefined)
-                      if (!name?.trim() || name === sp.name) return
-                      try {
-                        await sendMessage({
-                          type: 'renameSpace',
-                          spaceId: sp.id,
-                          name: name.trim(),
-                        })
-                        await refresh()
-                      } catch (e) {
-                        handleError(e)
-                      }
-                    }}
-                    onColor={async (color) => {
-                      try {
-                        await sendMessage({
-                          type: 'setSpaceColor',
-                          spaceId: sp.id,
-                          color,
-                        })
-                        await refresh()
-                      } catch (e) {
-                        handleError(e)
-                      }
-                    }}
-                    onEmoji={async (emoji) => {
-                      try {
-                        await sendMessage({
-                          type: 'setSpaceEmoji',
-                          spaceId: sp.id,
-                          emoji,
-                        })
-                        await refresh()
-                      } catch (e) {
-                        handleError(e)
-                      }
-                    }}
-                    onDelete={async (closeTabs) => {
-                      setOpenMenu(undefined)
-                      try {
-                        await sendMessage({
-                          type: 'deleteSpace',
-                          spaceId: sp.id,
-                          closeTabs,
-                        })
-                        await refresh()
-                      } catch (e) {
-                        handleError(e)
-                      }
-                    }}
-                  />
-                )}
-              </div>
-            )
-          })}
-        </div>
+        <SpaceTabsList spaces={spaces} active={active} windowId={windowId} />
 
         {!active ? (
-          <p className="empty">No spaces yet — click + to create one.</p>
+          <Empty>No spaces yet — click + to create one.</Empty>
         ) : (
           <SpaceContent space={active} />
         )}
-      </div>
+      </Root>
     </AppCtxProvider>
   )
 }

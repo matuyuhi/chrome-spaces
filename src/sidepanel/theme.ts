@@ -1,6 +1,34 @@
 import { type UIFontSize } from '../shared/messaging'
 import { type SpaceColor } from '../shared/types'
 
+// Tokens are CSS variables defined globally in globalStyles. Components
+// reference them via `var(--token)`; this lets prefers-color-scheme
+// swap the whole palette without re-rendering React.
+export const tokens = {
+  fg: 'var(--fg)',
+  muted: 'var(--muted)',
+  subtle: 'var(--subtle)',
+  border: 'var(--border)',
+  bg: 'var(--bg)',
+  bgSoft: 'var(--bg-soft)',
+  bgHover: 'var(--bg-hover)',
+  bgActive: 'var(--bg-active)',
+  accent: 'var(--accent)',
+  accentSoft: 'var(--accent-soft)',
+  danger: 'var(--danger)',
+  shadow: 'var(--shadow)',
+  radius: {
+    sm: '4px',
+    md: '6px',
+    lg: '8px',
+    pill: '999px',
+  },
+  duration: {
+    fast: '80ms',
+    medium: '200ms',
+  },
+} as const
+
 export const COLORS: SpaceColor[] = [
   'blue',
   'red',
@@ -25,7 +53,6 @@ export const COLOR_HEX: Record<SpaceColor, string> = {
   orange: '#fa7b17',
 }
 
-// 5-step UI scale. 3 = default. Values multiply the base font-size.
 export const FONT_SCALE: Record<UIFontSize, number> = {
   1: 0.85,
   2: 0.92,
@@ -43,9 +70,6 @@ export const FONT_LABELS: Record<UIFontSize, string> = {
 }
 
 export function applyFontSize(size: UIFontSize): void {
-  // `zoom` is non-standard but Chromium-supported, scales text *and*
-  // padding/icons together with reflow (unlike `transform: scale`,
-  // which leaves the layout box at its original size).
   ;(document.documentElement.style as { zoom?: string }).zoom = String(
     FONT_SCALE[size],
   )

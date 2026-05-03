@@ -1,11 +1,40 @@
+import styled from '@emotion/styled'
 import { useState } from 'react'
-import { sendMessage } from '../shared/messaging'
-import { type Space } from '../shared/types'
-import { useAppCtx } from './AppContext'
-import { COLOR_HEX } from './theme'
+import { sendMessage } from '../../shared/messaging'
+import { type Space } from '../../shared/types'
+import { useAppCtx } from '../AppContext'
+import { COLOR_HEX, tokens } from '../theme'
 import { SpaceMenu } from './menus'
 import { FolderView } from './FolderView'
-import { MoreHorizontal } from './icons'
+import { IconButton } from '../atoms/IconButton'
+import { ColorDot } from '../atoms/ColorDot'
+import { NameInput } from '../atoms/NameInput'
+import { MoreHorizontal } from '../atoms/icons'
+
+const Body = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+`
+
+const Header = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 4px;
+  position: relative;
+`
+
+const Name = styled.span`
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: ${tokens.fg};
+`
 
 export function SpaceContent({ space }: { space: Space }) {
   const ctx = useAppCtx()
@@ -14,18 +43,14 @@ export function SpaceContent({ space }: { space: Space }) {
   const [editingName, setEditingName] = useState(false)
   const [draftName, setDraftName] = useState(space.name)
 
-  if (!root) return <p className="empty">(missing root folder)</p>
+  if (!root) return <p>(missing root folder)</p>
 
   return (
-    <div className="space-body">
-      <div className="space-header">
-        <span
-          className="dot-small"
-          style={{ background: COLOR_HEX[space.color] }}
-        />
+    <Body>
+      <Header>
+        <ColorDot color={COLOR_HEX[space.color]} size={4} />
         {editingName ? (
-          <input
-            className="name-input"
+          <NameInput
             autoFocus
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
@@ -53,13 +78,12 @@ export function SpaceContent({ space }: { space: Space }) {
             }}
           />
         ) : (
-          <span className="space-header-name">
+          <Name>
             {space.emoji ? `${space.emoji} ` : null}
             {space.name}
-          </span>
+          </Name>
         )}
-        <button
-          className="icon-btn"
+        <IconButton
           onClick={(e) => {
             e.stopPropagation()
             ctx.setOpenMenu(ctx.openMenu === menuId ? undefined : menuId)
@@ -67,7 +91,7 @@ export function SpaceContent({ space }: { space: Space }) {
           aria-label="Space menu"
         >
           <MoreHorizontal size={16} />
-        </button>
+        </IconButton>
         {ctx.openMenu === menuId && (
           <SpaceMenu
             space={space}
@@ -108,9 +132,9 @@ export function SpaceContent({ space }: { space: Space }) {
             }}
           />
         )}
-      </div>
+      </Header>
 
       <FolderView folder={root} depth={0} isRoot />
-    </div>
+    </Body>
   )
 }

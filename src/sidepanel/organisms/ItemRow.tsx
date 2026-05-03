@@ -1,10 +1,20 @@
-import { sendMessage } from '../shared/messaging'
-import { type FolderId, type ItemRef } from '../shared/types'
-import { useAppCtx } from './AppContext'
-import { type DropPos, dropPosKey } from './dnd'
+import { sendMessage } from '../../shared/messaging'
+import { type FolderId, type ItemRef } from '../../shared/types'
+import { useAppCtx } from '../AppContext'
+import { type DropPos, dropPosKey } from '../dnd'
 import { TabMenu } from './menus'
 import { FolderView } from './FolderView'
-import { Minus, X } from './icons'
+import { Minus, X } from '../atoms/icons'
+import {
+  CloseButton,
+  Favicon,
+  FaviconPlaceholder,
+  PinDot,
+  ResetButton,
+  TabMain,
+  TabRowBox,
+  TabTitle,
+} from '../molecules/TabRow'
 
 interface Props {
   item: ItemRef
@@ -32,10 +42,8 @@ export function ItemRow({
   const tabRecord = ctx.store.tabs[item.tabId]
   const isPinned = !!tabRecord?.baseUrl
   const tabMenuId = `tab:${item.tabId}`
-  // Resolve the URL the − button would jump back to. Live folders always
-  // have a base (managedTab.url, treated as canonical and preferred over
-  // any user-set baseUrl), so the button is shown for every Live tab.
-  // Manually-pinned tabs use their stored baseUrl.
+  // For Live folder tabs, the base URL is the managedTab.url. Otherwise
+  // fall back to a user-pinned baseUrl on TabRecord.
   const resetTargetUrl = (() => {
     if (parentIsLive) {
       for (const f of Object.values(ctx.store.folders)) {
@@ -60,19 +68,12 @@ export function ItemRow({
     ctx.dropPos.folderId === parentFolderId &&
     ctx.dropPos.index === indexInParent
 
-  const className = [
-    'tab-row',
-    tab?.active && 'is-active',
-    isDragging && 'is-dragging',
-    isDropAbove && 'drop-above',
-    isDropBelow && 'drop-below',
-  ]
-    .filter(Boolean)
-    .join(' ')
-
   return (
-    <div
-      className={className}
+    <TabRowBox
+      isActive={tab?.active}
+      isDragging={isDragging}
+      dropAbove={isDropAbove}
+      dropBelow={isDropBelow}
       style={{ paddingLeft: depth * 12 }}
       // Tabs inside a Live folder cannot be reordered or moved out — the
       // sync engine owns their placement.
@@ -123,8 +124,7 @@ export function ItemRow({
         ctx.setOpenMenu(ctx.openMenu === tabMenuId ? undefined : tabMenuId)
       }}
     >
-      <button
-        className="tab-main"
+      <TabMain
         onClick={async () => {
           try {
             await sendMessage({ type: 'activateTab', tabId: item.tabId })
@@ -135,17 +135,17 @@ export function ItemRow({
         title={tab?.url ?? ''}
       >
         {tab?.favIconUrl ? (
-          <img className="favicon" src={tab.favIconUrl} alt="" />
+          <Favicon src={tab.favIconUrl} alt="" />
         ) : (
-          <span className="favicon-placeholder" aria-hidden />
+          <FaviconPlaceholder aria-hidden />
         )}
-        <span className="tab-title">
+        <TabTitle active={tab?.active}>
+          {isPinned && <PinDot aria-label="Pinned" />}
           {tab?.title || tab?.url || `(tab ${item.tabId})`}
-        </span>
-      </button>
+        </TabTitle>
+      </TabMain>
       {hasResetTarget && (
-        <button
-          className="tab-reset icon-btn"
+        <ResetButton
           title={`Jump back to ${resetTargetUrl}`}
           onClick={async (e) => {
             e.stopPropagation()
@@ -158,10 +158,10 @@ export function ItemRow({
           aria-label="Reset to base URL"
         >
           <Minus size={14} />
-        </button>
+        </ResetButton>
       )}
-      <button
-        className="tab-close icon-btn"
+      <CloseButton
+        className="close-btn"
         title="Close"
         onClick={async () => {
           try {
@@ -174,7 +174,7 @@ export function ItemRow({
         aria-label="Close tab"
       >
         <X size={14} />
-      </button>
+      </CloseButton>
       {ctx.openMenu === tabMenuId && (
         <TabMenu
           canReset={hasResetTarget}
@@ -220,6 +220,6 @@ export function ItemRow({
           }}
         />
       )}
-    </div>
+    </TabRowBox>
   )
 }

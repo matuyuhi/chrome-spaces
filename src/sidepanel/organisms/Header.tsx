@@ -1,0 +1,73 @@
+import styled from '@emotion/styled'
+import { tokens } from '../theme'
+import { PillButton } from '../atoms/Button'
+import { Download, Plus, Settings as SettingsIcon } from '../atoms/icons'
+
+const Bar = styled.header`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 24px;
+
+  h1 {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin: 0;
+    flex: 1;
+    color: ${tokens.subtle};
+    text-transform: uppercase;
+  }
+`
+
+const Actions = styled.div`
+  display: flex;
+  gap: 4px;
+`
+
+const Count = styled.span`
+  font-size: 11px;
+  font-weight: 600;
+`
+
+interface Props {
+  tabGroupCount: number
+  onImportTabGroups: () => void
+  onNewSpace: () => void
+  onOpenSettings: () => void
+}
+
+export function PanelHeader({
+  tabGroupCount,
+  onImportTabGroups,
+  onNewSpace,
+  onOpenSettings,
+}: Props) {
+  return (
+    <Bar>
+      <h1>Spaces</h1>
+      <Actions>
+        {tabGroupCount > 0 && (
+          <PillButton
+            title={`Convert ${tabGroupCount} Chrome Tab Group${tabGroupCount === 1 ? '' : 's'} to Space${tabGroupCount === 1 ? '' : 's'}`}
+            onClick={onImportTabGroups}
+          >
+            <Download size={14} />
+            <Count>{tabGroupCount}</Count>
+          </PillButton>
+        )}
+        <PillButton title="New Space" aria-label="New Space" onClick={onNewSpace}>
+          <Plus size={14} />
+        </PillButton>
+        <PillButton
+          title="Settings"
+          aria-label="Settings"
+          onClick={onOpenSettings}
+        >
+          <SettingsIcon size={14} />
+        </PillButton>
+      </Actions>
+    </Bar>
+  )
+}
