@@ -422,9 +422,13 @@ export async function registerTab(tab: chrome.tabs.Tab): Promise<void> {
     if (!space) return
     const root = s.folders[space.rootFolderId]
     if (!root) return
-    const alreadyAnywhere = Object.values(s.folders).some((f) =>
-      f.items.some((it) => it.kind === 'tab' && it.tabId === tabId),
-    )
+    const alreadyAnywhere = Object.values(s.folders).some((f) => {
+      if (f.items.some((it) => it.kind === 'tab' && it.tabId === tabId)) return true
+      // Live folder already claims this tabId via a managedTab — don't
+      // double-register into the active Space's root.
+      if (f.live?.managedTabs.some((m) => m.tabId === tabId)) return true
+      return false
+    })
     if (!alreadyAnywhere) root.items.push({ kind: 'tab', tabId })
   })
 }
