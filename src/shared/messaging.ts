@@ -73,6 +73,7 @@ export type Message =
   | { type: 'importStore'; store: SpaceStore; currentWindowId: number }
   | { type: 'undo'; windowId: number }
   | { type: 'peekUndo'; windowId: number }
+  | { type: 'reconcile' }
   // Background → side panel broadcast, not a request.
   | { type: 'openCommandBar'; windowId: number }
 
@@ -134,6 +135,7 @@ export interface MessageResponseMap {
   importStore: void
   undo: { ok: boolean; description?: string }
   peekUndo: { kind: string; description: string } | undefined
+  reconcile: { dropped: number }
   openCommandBar: void
 }
 

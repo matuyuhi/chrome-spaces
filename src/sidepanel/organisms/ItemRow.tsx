@@ -146,7 +146,7 @@ export function ItemRow({
         )}
         <TabTitle active={tab?.active}>
           {isPinned && <PinDot aria-label="Pinned" />}
-          {tab?.title || tab?.url || `(tab ${item.tabId})`}
+          {tab?.title || tab?.url || '(missing tab — click × to remove)'}
         </TabTitle>
       </TabMain>
       {hasResetTarget && (
