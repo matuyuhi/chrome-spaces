@@ -23,20 +23,24 @@ import {
 import { RunCat } from '../molecules/RunCat'
 import { SyncButton } from '../molecules/SyncButton'
 
-// Hover-to-reveal driven by a static .add-row class instead of an
-// emotion component selector — same Storybook-runner constraint as
-// CloseButton / TabRow.
+// Hover-to-reveal driven by static class names instead of an emotion
+// component selector — same Storybook-runner constraint as CloseButton /
+// TabRow. The grid-template-rows: 0fr → 1fr trick is the "animate to
+// height: auto" pattern that's been the standard for years; no modern
+// CSS features (@starting-style, interpolate-size, allow-discrete) needed.
 const FolderBox = styled.div<{ isDragging?: boolean }>`
   display: flex;
   flex-direction: column;
   opacity: ${(p) => (p.isDragging ? 0.4 : 1)};
 
-  /* Show this folder's own add-row when hovered/focused, but suppress it
-     while a nested folder-box is the actual target — otherwise hovering a
-     deep child also lights up every ancestor's "+ Folder" affordance. */
+  /* Show this folder's own add-row when hovered/focused, but suppress
+     it while a nested folder-box is the actual target — otherwise
+     hovering a deep child also lights up every ancestor's "+ Folder"
+     affordance. */
   &:hover:not(:has(.folder-box:hover)) > .items > .add-row,
   &:focus-within:not(:has(.folder-box:focus-within)) > .items > .add-row {
-    display: flex;
+    grid-template-rows: 1fr;
+    opacity: 1;
   }
 `
 
@@ -47,7 +51,18 @@ const Items = styled.div`
 `
 
 const AddRow = styled.div`
-  display: none;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 160ms ease-out,
+    opacity 140ms ease-out;
+`
+
+const AddRowInner = styled.div`
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
   gap: 12px;
   padding: 4px 0 6px;
 `
@@ -320,13 +335,15 @@ export function FolderView({ folder, depth, isRoot }: Props) {
             />
           ))}
           {showAddRow && (
-            <AddRow className="add-row" style={{ paddingLeft: (depth + 1) * 12 }}>
-              <LinkButton onClick={() => void handleAddFolder()}>
-                + Folder
-              </LinkButton>
-              <LinkButton onClick={() => ctx.onCreateLive(folder.id)}>
-                + Live folder
-              </LinkButton>
+            <AddRow className="add-row">
+              <AddRowInner style={{ paddingLeft: (depth + 1) * 12 }}>
+                <LinkButton onClick={() => void handleAddFolder()}>
+                  + Folder
+                </LinkButton>
+                <LinkButton onClick={() => ctx.onCreateLive(folder.id)}>
+                  + Live folder
+                </LinkButton>
+              </AddRowInner>
             </AddRow>
           )}
         </Items>
