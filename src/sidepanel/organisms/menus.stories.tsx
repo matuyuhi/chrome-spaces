@@ -71,6 +71,8 @@ export const Folder_: Story = {
         onRename={noop}
         onEmoji={noop}
         onEditLive={noop}
+        onAddFolder={noop}
+        onAddLive={noop}
         onDelete={noop}
       />
     </Anchor>
@@ -87,6 +89,8 @@ export const LiveFolder: Story = {
         onRename={noop}
         onEmoji={noop}
         onEditLive={noop}
+        onAddFolder={noop}
+        onAddLive={noop}
         onDelete={noop}
       />
     </Anchor>

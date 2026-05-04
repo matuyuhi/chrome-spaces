@@ -77,6 +77,8 @@ export function FolderMenu({
   onRename,
   onEmoji,
   onEditLive,
+  onAddFolder,
+  onAddLive,
   onDelete,
 }: {
   folder: Folder
@@ -84,12 +86,21 @@ export function FolderMenu({
   onRename: () => void
   onEmoji: (emoji: string | undefined) => void
   onEditLive: () => void
+  onAddFolder: () => void
+  onAddLive: () => void
   onDelete: (closeTabs: boolean) => void
 }) {
+  const isLive = !!folder.live
   return (
     <MenuBox role="menu" onClick={(e) => e.stopPropagation()}>
       <MenuItem onClick={onRename}>Rename</MenuItem>
-      {folder.live && <MenuItem onClick={onEditLive}>Edit live config</MenuItem>}
+      {isLive && <MenuItem onClick={onEditLive}>Edit live config</MenuItem>}
+      {!isLive && (
+        <>
+          <MenuItem onClick={onAddFolder}>+ Folder</MenuItem>
+          <MenuItem onClick={onAddLive}>+ Live folder</MenuItem>
+        </>
+      )}
       <MenuSection>Icon</MenuSection>
       <EmojiInput initial={folder.emoji} onChange={onEmoji} />
       <MenuDivider />
