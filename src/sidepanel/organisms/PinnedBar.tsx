@@ -54,16 +54,25 @@ const BlockWrap = styled.div`
 // ---- PinnedMenu -----------------------------------------------------------
 
 function PinnedMenu({
+  anchor,
   onUnpin,
   onClose,
 }: {
+  anchor: 'left' | 'right'
   onUnpin: () => void
   onClose: () => void
 }) {
+  // The default MenuBox anchors right:0; pinned blocks live near the
+  // left edge so the menu would clip off the left side. Caller picks
+  // 'left' or 'right' based on which side has room in the panel.
+  const positionStyle =
+    anchor === 'left'
+      ? { top: '100%', left: 0, right: 'auto' as const }
+      : { top: '100%', right: 0, left: 'auto' as const }
   return (
     <MenuBox
       role="menu"
-      style={{ top: '100%', right: 0, left: 'auto', minWidth: 120 }}
+      style={{ ...positionStyle, minWidth: 120 }}
       onClick={(e) => e.stopPropagation()}
     >
       <MenuItem onClick={onUnpin}>Unpin</MenuItem>
@@ -84,6 +93,11 @@ export function PinnedBar({
   const ctx = useAppCtx()
   const pins = pinnedUrls ?? []
   const [isOver, setIsOver] = useState(false)
+  // Per-block anchor decided when its menu opens — flips between left
+  // and right based on which side has room in the side panel viewport.
+  const [menuAnchors, setMenuAnchors] = useState<Record<string, 'left' | 'right'>>(
+    {},
+  )
 
   // Set of normalized URLs currently open as visible tabs in this window.
   // Used to mark each PinnedBlock as "active" when the user is on it.
@@ -96,19 +110,15 @@ export function PinnedBar({
     return set
   }, [ctx.tabs])
 
-  // Hide the bar when there's nothing pinned AND no tab drag is in
-  // progress. The drag-in-progress check keeps the drop affordance
-  // discoverable: the moment the user starts dragging a tab, the empty
-  // bar appears as a drop target.
-  const isDraggingTab =
-    ctx.drag?.kind === 'item' && ctx.drag.item.kind === 'tab'
-  if (pins.length === 0 && !isDraggingTab) return null
-
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     // Only accept tab items (not folder drags)
     if (ctx.drag?.kind === 'item' && ctx.drag.item.kind === 'tab') {
       e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
+      // ItemRow's onDragStart sets effectAllowed='move'. The dropEffect
+      // here MUST be a compatible value (move) — setting 'copy' makes
+      // Chrome silently suppress the drop event entirely (dragover still
+      // fires, but drop never does).
+      e.dataTransfer.dropEffect = 'move'
       setIsOver(true)
     }
   }
@@ -201,12 +211,27 @@ export function PinnedBar({
               onContextMenu={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
+                if (ctx.openMenu !== menuId) {
+                  // Decide which side to anchor the menu on based on
+                  // available room. Estimate the menu at 140px (minWidth
+                  // 120 + a small buffer for items / padding).
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const MENU_WIDTH = 140
+                  const MARGIN = 8
+                  const fitsLeftAnchor =
+                    rect.left + MENU_WIDTH <= window.innerWidth - MARGIN
+                  setMenuAnchors((prev) => ({
+                    ...prev,
+                    [pin.id]: fitsLeftAnchor ? 'left' : 'right',
+                  }))
+                }
                 ctx.setOpenMenu(ctx.openMenu === menuId ? undefined : menuId)
               }}
               aria-label={pin.title ?? pin.url}
             />
             {ctx.openMenu === menuId && (
               <PinnedMenu
+                anchor={menuAnchors[pin.id] ?? 'left'}
                 onUnpin={() => void handleUnpin(pin.id)}
                 onClose={() => ctx.setOpenMenu(undefined)}
               />
