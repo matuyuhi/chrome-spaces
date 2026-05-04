@@ -53,6 +53,17 @@ import {
 import { BUILTIN_GITHUB_CLIENT_ID, pollDeviceFlow, startDeviceFlow } from './oauth'
 import { getUIPrefs, setUIPrefs } from './ui-prefs'
 import { ensureAutoArchiveAlarm } from './auto-archive'
+import {
+  clearUndoStack,
+  findWindowIdForFolder,
+  findWindowIdForItem,
+  peekUndo,
+  recordCloseTab,
+  recordDeleteFolder,
+  recordDeleteSpace,
+  recordMoveItem,
+  undo,
+} from './undo'
 import { type Message, type MessageResponse } from '../shared/messaging'
 
 async function bootstrap(): Promise<void> {
@@ -118,8 +129,19 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return setSpaceColor(msg.spaceId, msg.color)
     case 'setSpaceEmoji':
       return setSpaceEmoji(msg.spaceId, msg.emoji)
-    case 'deleteSpace':
+    case 'deleteSpace': {
+      const _store = await loadStore()
+      const _sp = _store.spaces[msg.spaceId]
+      if (_sp) {
+        const _wid0 = _sp.windowId
+        try {
+          await recordDeleteSpace(msg.spaceId, msg.closeTabs, _wid0)
+        } catch (e) {
+          console.error('[Spaces] undo record failed', e)
+        }
+      }
       return deleteSpace(msg.spaceId, { closeTabs: msg.closeTabs })
+    }
     case 'reorderSpaces':
       return reorderSpaces(msg.windowId, msg.orderedIds)
     case 'switchTo':
@@ -132,8 +154,21 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return setFolderEmoji(msg.folderId, msg.emoji)
     case 'setFolderCollapsed':
       return setFolderCollapsed(msg.folderId, msg.collapsed)
-    case 'deleteFolder':
+    case 'deleteFolder': {
+      const _store2 = await loadStore()
+      const _folder = _store2.folders[msg.folderId]
+      if (_folder && !_folder.live) {
+        const _wid = findWindowIdForFolder(_store2, msg.folderId)
+        if (typeof _wid === 'number') {
+          try {
+            await recordDeleteFolder(msg.folderId, msg.closeTabs, _wid)
+          } catch (e) {
+            console.error('[Spaces] undo record failed', e)
+          }
+        }
+      }
       return deleteFolder(msg.folderId, { closeTabs: msg.closeTabs })
+    }
     case 'updateLiveFolder':
       return updateLiveFolder(msg.folderId, {
         source: msg.source,
@@ -143,16 +178,35 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return syncLiveFolder(msg.folderId)
     case 'materializeLiveTab':
       return materializeLiveTab(msg.folderId, msg.externalId)
-    case 'moveItem':
+    case 'moveItem': {
+      const _store3 = await loadStore()
+      const _wid2 = findWindowIdForItem(_store3, msg.item)
+      if (typeof _wid2 === 'number') {
+        try {
+          await recordMoveItem(msg.item, _wid2)
+        } catch (e) {
+          console.error('[Spaces] undo record failed', e)
+        }
+      }
       return moveItem({ item: msg.item, toFolderId: msg.toFolderId, toIndex: msg.toIndex })
+    }
     case 'pinTab':
       return pinTab(msg.tabId, msg.baseUrl)
     case 'unpinTab':
       return unpinTab(msg.tabId)
     case 'resetTab':
       return resetTabToBase(msg.tabId)
-    case 'closeTab':
+    case 'closeTab': {
+      const _tabInfo = await chrome.tabs.get(msg.tabId).catch(() => undefined)
+      if (_tabInfo && typeof _tabInfo.windowId === 'number') {
+        try {
+          await recordCloseTab(msg.tabId, _tabInfo.windowId)
+        } catch (e) {
+          console.error('[Spaces] undo record failed', e)
+        }
+      }
       return chrome.tabs.remove(msg.tabId)
+    }
     case 'activateTab':
       return chrome.tabs.update(msg.tabId, { active: true })
     case 'getGitHubAuthState': {
@@ -209,6 +263,10 @@ async function handleMessage(msg: Message): Promise<unknown> {
       }
       return undefined
     }
+    case 'undo':
+      return undo(msg.windowId)
+    case 'peekUndo':
+      return peekUndo(msg.windowId)
     case 'openCommandBar':
       // Background → side panel broadcast; the side panel handles it.
       return undefined
@@ -239,6 +297,7 @@ chrome.tabs.onAttached.addListener((tabId, info) => {
 })
 
 chrome.windows.onRemoved.addListener((windowId) => {
+  clearUndoStack(windowId)
   void onWindowRemoved(windowId)
 })
 
