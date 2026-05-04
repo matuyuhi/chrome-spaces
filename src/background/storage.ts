@@ -28,12 +28,25 @@ export async function saveStore(store: SpaceStore): Promise<void> {
   await chrome.storage.local.set({ [STORAGE_KEY]: store })
 }
 
+// Serialize updates so concurrent callers don't trample each other.
+// chrome.storage.local.get + set is two async hops with no built-in
+// transaction; without this lock, two updateStore() calls that overlap
+// can both load the same snapshot and then save sequentially, with the
+// later save silently discarding the earlier mutation. This bit
+// chrome.tabs.onCreated → registerTab racing materializeLiveTab.
+let updateChain: Promise<unknown> = Promise.resolve()
+
 export async function updateStore(
   mutator: (store: SpaceStore) => SpaceStore | void,
 ): Promise<SpaceStore> {
-  const current = await loadStore()
-  const next = mutator(current) ?? current
-  await saveStore(next)
+  const next = updateChain.then(async () => {
+    const current = await loadStore()
+    const result = mutator(current) ?? current
+    await saveStore(result)
+    return result
+  })
+  // Don't let one mutator's rejection break the chain for everyone else.
+  updateChain = next.catch(() => undefined)
   return next
 }
 

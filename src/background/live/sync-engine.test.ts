@@ -4,6 +4,7 @@ import {
   createFolder,
   createSpace,
   materializeLiveTab,
+  registerTab,
   switchTo,
 } from '../space-manager'
 import { setGitHubPat } from '../secret-storage'
@@ -158,6 +159,49 @@ describe('syncLiveFolder', () => {
     const final = (await loadStore()).folders[live.id]
     expect(final?.live?.managedTabs.map((m) => m.externalId)).toEqual(['a/b#1'])
     expect(final?.items.map((it) => (it.kind === 'live' ? it.externalId : null))).toEqual(['a/b#1'])
+  })
+
+  it('survives the chrome.tabs.onCreated → registerTab race during materialize', async () => {
+    await setGitHubPat('ghp_test')
+    const space = await createSpace({ name: 'R', color: 'red', windowId: 1 })
+    await switchTo(space.id, 1)
+    const live = await createFolder({
+      parentFolderId: space.rootFolderId,
+      name: 'Reviews',
+      live: {
+        source: { type: 'github-prs', preset: 'review-requested' },
+        refreshIntervalMin: 0,
+      },
+    })
+    const fakeFetch = vi.fn(async () =>
+      searchResponse([{ repo: 'a/b', number: 1 }]),
+    )
+    await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
+
+    // Reproduce the SW event-loop pairing: chrome.tabs.create resolves,
+    // and chrome.tabs.onCreated fires concurrently with the materialize
+    // updateStore. Without serialization + the alreadyAnywhere managedTab
+    // check, registerTab would either lose managedTab.tabId or push a
+    // duplicate {kind:'tab'} into the active Space's root.
+    const original = chrome.tabs.create
+    chrome.tabs.create = (async (props: chrome.tabs.CreateProperties) => {
+      const tab = await original(props)
+      void registerTab(tab)
+      return tab
+    }) as typeof chrome.tabs.create
+
+    const tabId = await materializeLiveTab(live.id, 'a/b#1')
+    chrome.tabs.create = original
+
+    expect(tabId).toBeTypeOf('number')
+    const final = (await loadStore()).folders[live.id]!
+    expect(final.live!.managedTabs.find((m) => m.externalId === 'a/b#1')?.tabId).toBe(
+      tabId,
+    )
+    const root = (await loadStore()).folders[space.rootFolderId]!
+    expect(
+      root.items.some((it) => it.kind === 'tab' && it.tabId === tabId),
+    ).toBe(false)
   })
 
   it('closes the materialized Chrome tab when an item disappears upstream', async () => {
