@@ -31,8 +31,12 @@ const FolderBox = styled.div<{ isDragging?: boolean }>`
   flex-direction: column;
   opacity: ${(p) => (p.isDragging ? 0.4 : 1)};
 
-  &:hover .add-row {
-    opacity: 1;
+  /* Show this folder's own add-row when hovered/focused, but suppress it
+     while a nested folder-box is the actual target — otherwise hovering a
+     deep child also lights up every ancestor's "+ Folder" affordance. */
+  &:hover:not(:has(.folder-box:hover)) > .items > .add-row,
+  &:focus-within:not(:has(.folder-box:focus-within)) > .items > .add-row {
+    display: flex;
   }
 `
 
@@ -43,11 +47,9 @@ const Items = styled.div`
 `
 
 const AddRow = styled.div`
-  display: flex;
+  display: none;
   gap: 12px;
   padding: 4px 0 6px;
-  opacity: 0;
-  transition: opacity 80ms ease;
 `
 
 interface Props {
@@ -79,7 +81,7 @@ export function FolderView({ folder, depth, isRoot }: Props) {
     !(ctx.drag.item.kind === 'folder' && ctx.drag.item.folderId === folder.id)
 
   return (
-    <FolderBox isDragging={isDraggingThis}>
+    <FolderBox className="folder-box" isDragging={isDraggingThis}>
       {!isRoot && (
         <FolderHeaderBox
           isDropInto={isDropInto}
@@ -256,7 +258,7 @@ export function FolderView({ folder, depth, isRoot }: Props) {
       )}
 
       {!collapsed && (
-        <Items>
+        <Items className="items">
           {folder.items.map((it, idx) => (
             <ItemRow
               key={itemKey(it, idx)}
