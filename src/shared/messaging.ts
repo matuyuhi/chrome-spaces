@@ -141,11 +141,17 @@ export interface UIPreferences {
   // Move tabs untouched for this many days into the per-Space "Archive"
   // folder. 0 = disabled. Live folder tabs are never archived.
   autoArchiveDays: number
+  // When false (default) the hover-revealed "+ Folder" / "+ Live folder"
+  // affordance only appears on the Space root, not on nested folders —
+  // those rely on the FolderMenu items instead. The hover juddering on
+  // deeply-nested rows is the reason this defaults off.
+  showAddRowsInNestedFolders: boolean
 }
 
 export const DEFAULT_UI_PREFS: UIPreferences = {
   fontSize: 3,
   autoArchiveDays: 0,
+  showAddRowsInNestedFolders: false,
 }
 
 export type MessageResponse =

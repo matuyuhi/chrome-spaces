@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { DEFAULT_UI_PREFS, type UIPreferences } from '../../shared/messaging'
 import { type SpaceStore } from '../../shared/types'
 import { AppCtxProvider, type AppCtx } from '../AppContext'
 import { type DragState, type DropPos, type TabInfo } from '../dnd'
@@ -15,6 +16,7 @@ interface Overrides {
   store?: SpaceStore
   tabs?: Record<number, TabInfo>
   windowId?: number
+  prefs?: UIPreferences
 }
 
 export function MockProvider({
@@ -32,6 +34,7 @@ export function MockProvider({
     store: overrides.store ?? EMPTY,
     windowId: overrides.windowId ?? 1,
     tabs: overrides.tabs ?? {},
+    prefs: overrides.prefs ?? DEFAULT_UI_PREFS,
     refresh: async () => {
       /* no-op in stories */
     },

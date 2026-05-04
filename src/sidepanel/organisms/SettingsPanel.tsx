@@ -140,6 +140,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [fontSize, setFontSize] = useState<UIFontSize>(3)
   const [autoArchiveDays, setAutoArchiveDays] = useState(0)
   const [archiveSavedAt, setArchiveSavedAt] = useState<number | undefined>()
+  const [showAddRowsInNestedFolders, setShowAddRowsInNestedFolders] =
+    useState(false)
   const [baseUrl, setBaseUrl] = useState('')
   const [baseUrlIsCustom, setBaseUrlIsCustom] = useState(false)
   const [baseUrlStatus, setBaseUrlStatus] = useState<string | undefined>()
@@ -171,6 +173,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     void sendMessage({ type: 'getUIPrefs' }).then((prefs) => {
       setFontSize(prefs.fontSize)
       setAutoArchiveDays(prefs.autoArchiveDays)
+      setShowAddRowsInNestedFolders(prefs.showAddRowsInNestedFolders)
     })
     void sendMessage({ type: 'getGitHubApiBaseUrl' }).then(({ url, isCustom }) => {
       setBaseUrl(isCustom ? url : '')
@@ -214,6 +217,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     await sendMessage({ type: 'setUIPrefs', prefs: { autoArchiveDays: n } })
     setArchiveSavedAt(Date.now())
     setTimeout(() => setArchiveSavedAt(undefined), 1500)
+  }
+
+  const handleNestedAddRows = async (next: boolean) => {
+    setShowAddRowsInNestedFolders(next)
+    await sendMessage({
+      type: 'setUIPrefs',
+      prefs: { showAddRowsInNestedFolders: next },
+    })
   }
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -387,6 +398,33 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             </SizeBtn>
           ))}
         </SizePicker>
+      </Section>
+
+      <Section>
+        <h2>Folder controls</h2>
+        <p className="muted">
+          Show the hover-revealed <code>+ Folder</code> /{' '}
+          <code>+ Live folder</code> row inside nested folders too. Off by
+          default — the <code>…</code> menu always exposes both actions, so
+          turning this off keeps deeply-nested rows from juddering on hover.
+        </p>
+        <Actions>
+          <label
+            style={{
+              display: 'inline-flex',
+              gap: 6,
+              alignItems: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showAddRowsInNestedFolders}
+              onChange={(e) => void handleNestedAddRows(e.target.checked)}
+            />
+            <span>Show on nested folders</span>
+          </label>
+        </Actions>
       </Section>
 
       <Section>

@@ -1,6 +1,10 @@
 import styled from '@emotion/styled'
 import { useCallback, useEffect, useState } from 'react'
-import { sendMessage } from '../shared/messaging'
+import {
+  DEFAULT_UI_PREFS,
+  sendMessage,
+  type UIPreferences,
+} from '../shared/messaging'
 import {
   type FolderId,
   type SpaceStore,
@@ -58,6 +62,12 @@ export function App() {
   const [drag, setDrag] = useState<DragState | undefined>()
   const [dropPos, setDropPos] = useState<DropPos | undefined>()
   const [commandBarOpen, setCommandBarOpen] = useState(false)
+  const [prefs, setPrefs] = useState<UIPreferences>(DEFAULT_UI_PREFS)
+
+  const refreshPrefs = useCallback(async () => {
+    const next = await sendMessage({ type: 'getUIPrefs' })
+    setPrefs(next)
+  }, [])
 
   const refresh = useCallback(async () => {
     try {
@@ -166,8 +176,9 @@ export function App() {
   }, [refresh])
 
   useEffect(() => {
-    void sendMessage({ type: 'getUIPrefs' }).then((prefs) => {
-      applyFontSize(prefs.fontSize)
+    void sendMessage({ type: 'getUIPrefs' }).then((next) => {
+      applyFontSize(next.fontSize)
+      setPrefs(next)
     })
   }, [])
 
@@ -248,7 +259,12 @@ export function App() {
       <>
         <GlobalStyles />
         <Root>
-          <SettingsPanel onClose={() => setView({ kind: 'list' })} />
+          <SettingsPanel
+            onClose={() => {
+              setView({ kind: 'list' })
+              void refreshPrefs()
+            }}
+          />
         </Root>
       </>
     )
@@ -363,6 +379,7 @@ export function App() {
     store,
     windowId,
     tabs,
+    prefs,
     refresh,
     onError: handleError,
     openMenu,

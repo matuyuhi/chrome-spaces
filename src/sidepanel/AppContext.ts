@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import { type UIPreferences } from '../shared/messaging'
 import { type FolderId, type SpaceStore } from '../shared/types'
 import { type DragState, type DropPos, type TabInfo } from './dnd'
 
@@ -9,6 +10,7 @@ export interface AppCtx {
   store: SpaceStore
   windowId: number
   tabs: Record<number, TabInfo>
+  prefs: UIPreferences
 
   refresh: () => Promise<void>
   onError: (e: unknown) => void

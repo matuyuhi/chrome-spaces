@@ -80,6 +80,25 @@ export function FolderView({ folder, depth, isRoot }: Props) {
     !isLive &&
     !(ctx.drag.item.kind === 'folder' && ctx.drag.item.folderId === folder.id)
 
+  const showAddRow = !isLive && (isRoot || ctx.prefs.showAddRowsInNestedFolders)
+
+  const handleAddFolder = async () => {
+    const name = prompt('Folder name?')
+    if (!name?.trim()) return
+    try {
+      await sendMessage({
+        type: 'createFolder',
+        payload: {
+          parentFolderId: folder.id,
+          name: name.trim(),
+        },
+      })
+      await ctx.refresh()
+    } catch (e) {
+      ctx.onError(e)
+    }
+  }
+
   return (
     <FolderBox className="folder-box" isDragging={isDraggingThis}>
       {!isRoot && (
@@ -262,6 +281,14 @@ export function FolderView({ folder, depth, isRoot }: Props) {
                 ctx.setOpenMenu(undefined)
                 ctx.onEditLive(folder.id)
               }}
+              onAddFolder={() => {
+                ctx.setOpenMenu(undefined)
+                void handleAddFolder()
+              }}
+              onAddLive={() => {
+                ctx.setOpenMenu(undefined)
+                ctx.onCreateLive(folder.id)
+              }}
               onDelete={async (closeTabs) => {
                 try {
                   await sendMessage({
@@ -292,26 +319,9 @@ export function FolderView({ folder, depth, isRoot }: Props) {
               depth={depth + 1}
             />
           ))}
-          {!isLive && (
+          {showAddRow && (
             <AddRow className="add-row" style={{ paddingLeft: (depth + 1) * 12 }}>
-              <LinkButton
-                onClick={async () => {
-                  const name = prompt('Folder name?')
-                  if (!name?.trim()) return
-                  try {
-                    await sendMessage({
-                      type: 'createFolder',
-                      payload: {
-                        parentFolderId: folder.id,
-                        name: name.trim(),
-                      },
-                    })
-                    await ctx.refresh()
-                  } catch (e) {
-                    ctx.onError(e)
-                  }
-                }}
-              >
+              <LinkButton onClick={() => void handleAddFolder()}>
                 + Folder
               </LinkButton>
               <LinkButton onClick={() => ctx.onCreateLive(folder.id)}>
