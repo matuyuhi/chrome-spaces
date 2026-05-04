@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DEFAULT_UI_PREFS, type UIPreferences } from '../../shared/messaging'
+import { DEFAULT_UI_PREFS } from '../../shared/messaging'
 import { type SpaceStore } from '../../shared/types'
 import { AppCtxProvider, type AppCtx } from '../AppContext'
 import { type DragState, type DropPos, type TabInfo } from '../dnd'
@@ -12,12 +12,12 @@ const EMPTY: SpaceStore = {
   schemaVersion: 3,
 }
 
-interface Overrides {
-  store?: SpaceStore
-  tabs?: Record<number, TabInfo>
-  windowId?: number
-  prefs?: UIPreferences
-}
+// Any AppCtx field can be overridden — pass `prefs` to flip a UI
+// preference, swap `onCreateLive` for a spy, replace `store` to render
+// an alternate fixture, etc. Internal state (openMenu / drag / dropPos)
+// is still wired up by default; override only when a story needs to
+// pin them to a specific value.
+type Overrides = Partial<AppCtx>
 
 export function MockProvider({
   children,
@@ -30,11 +30,11 @@ export function MockProvider({
   const [drag, setDrag] = useState<DragState | undefined>()
   const [dropPos, setDropPos] = useState<DropPos | undefined>()
 
-  const ctx: AppCtx = {
-    store: overrides.store ?? EMPTY,
-    windowId: overrides.windowId ?? 1,
-    tabs: overrides.tabs ?? {},
-    prefs: overrides.prefs ?? DEFAULT_UI_PREFS,
+  const defaults: AppCtx = {
+    store: EMPTY,
+    windowId: 1,
+    tabs: {},
+    prefs: DEFAULT_UI_PREFS,
     refresh: async () => {
       /* no-op in stories */
     },
@@ -54,7 +54,11 @@ export function MockProvider({
     onEditLive: (folderId) => console.log('[story] edit live', folderId),
   }
 
-  return <AppCtxProvider value={ctx}>{children}</AppCtxProvider>
+  return (
+    <AppCtxProvider value={{ ...defaults, ...overrides }}>
+      {children}
+    </AppCtxProvider>
+  )
 }
 
 // Convenience: build a SpaceStore + tabs map with a sensible shape.
@@ -93,6 +97,7 @@ export function makeFixture(): { store: SpaceStore; tabs: Record<number, TabInfo
           { kind: 'tab', tabId: 100 },
           { kind: 'folder', folderId: 'live1' },
           { kind: 'folder', folderId: 'sub1' },
+          { kind: 'tab', tabId: 101 },
         ],
       },
       live1: {
