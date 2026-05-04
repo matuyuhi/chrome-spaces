@@ -96,6 +96,14 @@ export function PinnedBar({
     return set
   }, [ctx.tabs])
 
+  // Hide the bar when there's nothing pinned AND no tab drag is in
+  // progress. The drag-in-progress check keeps the drop affordance
+  // discoverable: the moment the user starts dragging a tab, the empty
+  // bar appears as a drop target.
+  const isDraggingTab =
+    ctx.drag?.kind === 'item' && ctx.drag.item.kind === 'tab'
+  if (pins.length === 0 && !isDraggingTab) return null
+
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     // Only accept tab items (not folder drags)
     if (ctx.drag?.kind === 'item' && ctx.drag.item.kind === 'tab') {
