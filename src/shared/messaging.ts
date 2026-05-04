@@ -71,6 +71,8 @@ export type Message =
   | { type: 'getUIPrefs' }
   | { type: 'setUIPrefs'; prefs: Partial<UIPreferences> }
   | { type: 'importStore'; store: SpaceStore; currentWindowId: number }
+  | { type: 'undo'; windowId: number }
+  | { type: 'peekUndo'; windowId: number }
   // Background → side panel broadcast, not a request.
   | { type: 'openCommandBar'; windowId: number }
 
@@ -130,6 +132,8 @@ export interface MessageResponseMap {
   getUIPrefs: UIPreferences
   setUIPrefs: void
   importStore: void
+  undo: { ok: boolean; description?: string }
+  peekUndo: { kind: string; description: string } | undefined
   openCommandBar: void
 }
 

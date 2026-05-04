@@ -200,17 +200,30 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // ⌘K / Ctrl+K opens the command bar; ignore when typing in inputs.
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        const tag = (e.target as HTMLElement | null)?.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      const tag = (e.target as HTMLElement | null)?.tagName
+      const inEditor = tag === 'INPUT' || tag === 'TEXTAREA'
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key.toLowerCase() === 'k') {
+        if (inEditor) return
         e.preventDefault()
         setCommandBarOpen(true)
+        return
+      }
+      // ⌘Z / Ctrl+Z undoes the last destructive op (close-tab,
+      // delete-folder, delete-space, move-item) for this window.
+      // Skip when typing — native input undo wins there.
+      if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        if (inEditor) return
+        if (windowId === undefined) return
+        e.preventDefault()
+        void sendMessage({ type: 'undo', windowId }).then((res) => {
+          if (res.ok) void refresh()
+        })
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [windowId, refresh])
 
   // Horizontal swipe (2-finger trackpad or horizontal wheel) to switch spaces.
   // Only active when the main list view is visible.
