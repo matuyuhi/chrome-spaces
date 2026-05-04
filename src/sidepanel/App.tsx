@@ -201,6 +201,52 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Horizontal swipe (2-finger trackpad or horizontal wheel) to switch spaces.
+  // Only active when the main list view is visible.
+  useEffect(() => {
+    if (view.kind !== 'list') return
+    if (!store || windowId === undefined) return
+
+    let lastFiredAt = 0
+
+    const onWheel = (e: WheelEvent) => {
+      // Ignore vertical scrolls — only act when horizontal movement dominates.
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
+      // Minimum threshold to avoid tiny accidental drifts.
+      if (Math.abs(e.deltaX) <= 40) return
+      // Ignore when the user is typing in an input.
+      if ((e.target as Element | null)?.closest('input, textarea')) return
+      // Throttle: one switch per 400 ms (absorbs trackpad inertia).
+      const now = Date.now()
+      if (now - lastFiredAt < 400) return
+      lastFiredAt = now
+
+      const orderedSpaces = Object.values(store.spaces)
+        .filter((s) => s.windowId === windowId)
+        .sort((a, b) => a.order - b.order)
+      if (orderedSpaces.length <= 1) return
+
+      const activeSpaceId = store.activeSpaceByWindow[windowId]
+      const currentIdx = orderedSpaces.findIndex((s) => s.id === activeSpaceId)
+      if (currentIdx === -1) return
+
+      // deltaX > 0 → swipe left → next space; deltaX < 0 → swipe right → prev space.
+      const nextIdx = e.deltaX > 0 ? currentIdx + 1 : currentIdx - 1
+      // Clamp: no wrap-around at edges.
+      if (nextIdx < 0 || nextIdx >= orderedSpaces.length) return
+
+      const targetSpace = orderedSpaces[nextIdx]
+      if (!targetSpace) return
+
+      void sendMessage({ type: 'switchTo', spaceId: targetSpace.id, windowId }).then(
+        () => refresh(),
+      )
+    }
+
+    window.addEventListener('wheel', onWheel, { passive: true })
+    return () => window.removeEventListener('wheel', onWheel)
+  }, [view.kind, store, windowId, refresh])
+
   useEffect(() => {
     if (windowId === undefined) return
     const listener = (msg: unknown): boolean => {
