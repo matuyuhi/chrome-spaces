@@ -86,6 +86,29 @@ export function FolderView({ folder, depth, isRoot }: Props) {
           isLive={isLive}
           style={{ paddingLeft: depth * 12 }}
           draggable
+          onDoubleClick={async (e) => {
+            // Skip when the dblclick lands on an interactive control
+            // (toggle / sync / menu button or the rename input).
+            if ((e.target as HTMLElement).closest('button, input')) return
+            if (isLive) return
+            e.stopPropagation()
+            try {
+              const tab = await chrome.tabs.create({
+                windowId: ctx.windowId,
+                active: true,
+              })
+              if (typeof tab.id === 'number') {
+                await sendMessage({
+                  type: 'addTabsToFolder',
+                  folderId: folder.id,
+                  tabIds: [tab.id],
+                })
+                await ctx.refresh()
+              }
+            } catch (err) {
+              ctx.onError(err)
+            }
+          }}
           onDragStart={(e) => {
             e.stopPropagation()
             e.dataTransfer.effectAllowed = 'move'

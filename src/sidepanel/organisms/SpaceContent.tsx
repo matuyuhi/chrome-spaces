@@ -46,7 +46,21 @@ export function SpaceContent({ space }: { space: Space }) {
   if (!root) return <p>(missing root folder)</p>
 
   return (
-    <Body>
+    <Body
+      onDoubleClick={async (e) => {
+        // Only fire when the click lands on the empty area itself, not on
+        // any folder/tab row that bubbled up.
+        if (e.target !== e.currentTarget) return
+        try {
+          await chrome.tabs.create({ windowId: ctx.windowId, active: true })
+          // chrome.tabs.onCreated → registerTab will append the new tab
+          // to this Space's root folder; just refresh to surface it.
+          await ctx.refresh()
+        } catch (err) {
+          ctx.onError(err)
+        }
+      }}
+    >
       <Header>
         <ColorDot color={COLOR_HEX[space.color]} size={4} />
         {editingName ? (
