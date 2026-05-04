@@ -12,6 +12,7 @@ import {
   createSpace,
   deleteFolder,
   deleteSpace,
+  dropTab,
   importChromeTabGroups,
   importStore,
   materializeLiveTab,
@@ -34,7 +35,7 @@ import {
 import { handleAlarm, reconcileAlarms } from './live/alarms'
 import { syncLiveFolder } from './live/sync-engine'
 import { handleContextMenuClick, installContextMenus } from './context-menus'
-import { reconcile } from './reconcile'
+import { reconcile, reconcileIfStale } from './reconcile'
 import { loadStore, migrateIfNeeded } from './storage'
 import {
   DEFAULT_GITHUB_API_BASE,
@@ -204,11 +205,18 @@ async function handleMessage(msg: Message): Promise<unknown> {
         } catch (e) {
           console.error('[Spaces] undo record failed', e)
         }
+        return chrome.tabs.remove(msg.tabId)
       }
-      return chrome.tabs.remove(msg.tabId)
+      // Tab is no longer alive in Chrome (zombie reference left over from
+      // an SW suspension that missed onTabRemoved). Self-heal by dropping
+      // the stale ref so the X button always succeeds from the user's POV.
+      await dropTab(msg.tabId)
+      return
     }
     case 'activateTab':
       return chrome.tabs.update(msg.tabId, { active: true })
+    case 'reconcile':
+      return reconcileIfStale()
     case 'getGitHubAuthState': {
       const [oauth, pat, preferred, active] = await Promise.all([
         getGitHubOauthToken(),

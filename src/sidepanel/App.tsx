@@ -175,6 +175,23 @@ export function App() {
     void refresh()
   }, [refresh])
 
+  // Throttled in the SW (30s). Triggered on mount and whenever the panel
+  // regains visibility, since MV3 SWs can miss tab-close events while
+  // suspended and leave zombie tab refs in the store.
+  useEffect(() => {
+    const sweep = () => {
+      void sendMessage({ type: 'reconcile' }).then((res) => {
+        if (res.dropped > 0) void refresh()
+      })
+    }
+    sweep()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sweep()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [refresh])
+
   useEffect(() => {
     void sendMessage({ type: 'getUIPrefs' }).then((next) => {
       applyFontSize(next.fontSize)
