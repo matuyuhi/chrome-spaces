@@ -169,6 +169,8 @@ Two DragState kinds: `{ kind: 'item', item: ItemRef }` for tabs/folders, `{ kind
 
 Stories for AppContext-bound organisms use `MockProvider` + `makeFixture()` from `storybook/MockAppCtx.tsx`. Drop in `overrides` to vary state per story.
 
+**Storybook の vite config に `@crxjs/vite-plugin` を読ませない。** 拡張のメインビルドでは必要だが、Storybook 側に混ざると manifest を要求して story 起動が落ちる。`.storybook/main.ts` 側で `viteFinal` から crxjs を除外する（`93d97ca` 参照）。
+
 ## Conventions
 
 - All persistence goes through `loadStore` / `updateStore` in `storage.ts` (or `secret-storage.ts` for the token, `ui-prefs.ts` for the panel's font-size). Don't touch `chrome.storage` directly elsewhere.
@@ -178,3 +180,4 @@ Stories for AppContext-bound organisms use `MockProvider` + `makeFixture()` from
 - Live folder `items` array and `managedTabs` are sync-engine-owned. `moveItem` refuses to drop user content into a Live folder; the side panel `parentIsLive` flag also disables drag handlers on Live tab rows.
 - Component selectors in emotion don't survive Storybook's vitest runner — see the styling note above.
 - The `RunCat` SVG (live folder mascot) is purely cosmetic; if you need to add a similar animation, animate transform / opacity, not SVG attributes.
+- `auto` height からのスムーズな出現アニメーションは `grid-template-rows: 0fr → 1fr` トリックで書く（`@starting-style` や `interpolate-size` より枯れていて Chrome / Firefox 両対応）。実例は `+ Folder` 行のフェード（`fe9842a`）。
