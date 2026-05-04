@@ -4,6 +4,7 @@ import {
   type GitHubAuthMethod,
   type ItemRef,
   type LiveSource,
+  type PinnedUrl,
   type Space,
   type SpaceColor,
   type SpaceId,
@@ -74,6 +75,9 @@ export type Message =
   | { type: 'undo'; windowId: number }
   | { type: 'peekUndo'; windowId: number }
   | { type: 'reconcile' }
+  | { type: 'pinUrl'; spaceId: SpaceId; url: string; title?: string; favIconUrl?: string }
+  | { type: 'unpinUrl'; spaceId: SpaceId; pinnedId: string }
+  | { type: 'reorderPinnedUrls'; spaceId: SpaceId; orderedIds: string[] }
   // Background → side panel broadcast, not a request.
   | { type: 'openCommandBar'; windowId: number }
 
@@ -136,6 +140,9 @@ export interface MessageResponseMap {
   undo: { ok: boolean; description?: string }
   peekUndo: { kind: string; description: string } | undefined
   reconcile: { dropped: number }
+  pinUrl: PinnedUrl
+  unpinUrl: void
+  reorderPinnedUrls: void
   openCommandBar: void
 }
 

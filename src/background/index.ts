@@ -18,9 +18,11 @@ import {
   materializeLiveTab,
   moveItem,
   pinTab,
+  pinUrl,
   reattachOrphanSpaces,
   renameFolder,
   renameSpace,
+  reorderPinnedUrls,
   reorderSpaces,
   resetTabToBase,
   setFolderCollapsed,
@@ -29,6 +31,7 @@ import {
   setSpaceEmoji,
   switchTo,
   unpinTab,
+  unpinUrl,
   updateLiveFolder,
   validateLiveTabIds,
 } from './space-manager'
@@ -217,6 +220,12 @@ async function handleMessage(msg: Message): Promise<unknown> {
       return chrome.tabs.update(msg.tabId, { active: true })
     case 'reconcile':
       return reconcileIfStale()
+    case 'pinUrl':
+      return pinUrl(msg.spaceId, { url: msg.url, title: msg.title, favIconUrl: msg.favIconUrl })
+    case 'unpinUrl':
+      return unpinUrl(msg.spaceId, msg.pinnedId)
+    case 'reorderPinnedUrls':
+      return reorderPinnedUrls(msg.spaceId, msg.orderedIds)
     case 'getGitHubAuthState': {
       const [oauth, pat, preferred, active] = await Promise.all([
         getGitHubOauthToken(),

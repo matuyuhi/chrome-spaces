@@ -9,11 +9,14 @@ import {
   listSpaces,
   moveItem,
   pinTab,
+  pinUrl,
   registerTab,
+  reorderPinnedUrls,
   resetTabToBase,
   resolveBaseUrl,
   switchTo,
   unpinTab,
+  unpinUrl,
   updateLiveFolder,
 } from './space-manager'
 import { loadStore } from './storage'
@@ -249,5 +252,106 @@ describe('space-manager (v2)', () => {
     expect((await getActiveSpace(1))?.id).toBe(a.id)
     await switchTo(b.id, 1)
     expect((await getActiveSpace(1))?.id).toBe(b.id)
+  })
+
+  // ---- pinUrl / unpinUrl / reorderPinnedUrls ------------------------------
+
+  it('pinUrl adds a URL to an empty Space', async () => {
+    const space = await createSpace({ name: 'P', color: 'blue', windowId: 1 })
+    const pin = await pinUrl(space.id, { url: 'https://example.com/', title: 'Example' })
+    expect(pin.url).toBe('https://example.com/')
+    expect(pin.title).toBe('Example')
+    expect(typeof pin.id).toBe('string')
+    expect(pin.id.length).toBeGreaterThan(0)
+    const store = await loadStore()
+    expect(store.spaces[space.id]?.pinnedUrls).toHaveLength(1)
+    expect(store.spaces[space.id]?.pinnedUrls?.[0]).toMatchObject({
+      url: 'https://example.com/',
+      title: 'Example',
+    })
+  })
+
+  it('pinUrl returns the existing entry when the same URL is pinned twice', async () => {
+    const space = await createSpace({ name: 'P', color: 'blue', windowId: 1 })
+    const first = await pinUrl(space.id, { url: 'https://example.com/' })
+    const second = await pinUrl(space.id, { url: 'https://example.com/', title: 'Again' })
+    expect(second.id).toBe(first.id)
+    const store = await loadStore()
+    expect(store.spaces[space.id]?.pinnedUrls).toHaveLength(1)
+  })
+
+  it('pinUrl trims whitespace before deduplication and storage', async () => {
+    const space = await createSpace({ name: 'P', color: 'blue', windowId: 1 })
+    const pin = await pinUrl(space.id, { url: '  https://example.com  ' })
+    expect(pin.url).toBe('https://example.com/')
+    const store = await loadStore()
+    expect(store.spaces[space.id]?.pinnedUrls).toHaveLength(1)
+    expect(store.spaces[space.id]?.pinnedUrls?.[0].url).toBe('https://example.com/')
+  })
+
+  it('pinUrl rejects an empty URL', async () => {
+    const space = await createSpace({ name: 'P', color: 'blue', windowId: 1 })
+    await expect(pinUrl(space.id, { url: '   ' })).rejects.toThrow()
+  })
+
+  it('pinUrl adds 3 different URLs and all are stored in addedAt order', async () => {
+    const space = await createSpace({ name: 'P', color: 'blue', windowId: 1 })
+    const p1 = await pinUrl(space.id, { url: 'https://a.com' })
+    const p2 = await pinUrl(space.id, { url: 'https://b.com' })
+    const p3 = await pinUrl(space.id, { url: 'https://c.com' })
+    const store = await loadStore()
+    const pins = store.spaces[space.id]?.pinnedUrls ?? []
+    expect(pins).toHaveLength(3)
+    expect(pins[0].id).toBe(p1.id)
+    expect(pins[1].id).toBe(p2.id)
+    expect(pins[2].id).toBe(p3.id)
+    // addedAt is monotonically non-decreasing
+    expect(pins[0].addedAt).toBeLessThanOrEqual(pins[1].addedAt)
+    expect(pins[1].addedAt).toBeLessThanOrEqual(pins[2].addedAt)
+  })
+
+  it('unpinUrl removes the target and leaves others intact', async () => {
+    const space = await createSpace({ name: 'P', color: 'blue', windowId: 1 })
+    const p1 = await pinUrl(space.id, { url: 'https://a.com' })
+    const p2 = await pinUrl(space.id, { url: 'https://b.com' })
+    await unpinUrl(space.id, p1.id)
+    const store = await loadStore()
+    const pins = store.spaces[space.id]?.pinnedUrls ?? []
+    expect(pins).toHaveLength(1)
+    expect(pins[0].id).toBe(p2.id)
+  })
+
+  it('unpinUrl with a non-existent id is a no-op and does not throw', async () => {
+    const space = await createSpace({ name: 'P', color: 'blue', windowId: 1 })
+    await pinUrl(space.id, { url: 'https://a.com' })
+    await expect(unpinUrl(space.id, 'does-not-exist')).resolves.toBeUndefined()
+    const store = await loadStore()
+    expect(store.spaces[space.id]?.pinnedUrls).toHaveLength(1)
+  })
+
+  it('reorderPinnedUrls reorders entries by the given id list', async () => {
+    const space = await createSpace({ name: 'P', color: 'blue', windowId: 1 })
+    const p1 = await pinUrl(space.id, { url: 'https://a.com' })
+    const p2 = await pinUrl(space.id, { url: 'https://b.com' })
+    const p3 = await pinUrl(space.id, { url: 'https://c.com' })
+    await reorderPinnedUrls(space.id, [p3.id, p1.id, p2.id])
+    const store = await loadStore()
+    const pins = store.spaces[space.id]?.pinnedUrls ?? []
+    expect(pins.map((p) => p.id)).toEqual([p3.id, p1.id, p2.id])
+  })
+
+  it('reorderPinnedUrls appends unlisted entries at the end', async () => {
+    const space = await createSpace({ name: 'P', color: 'blue', windowId: 1 })
+    const p1 = await pinUrl(space.id, { url: 'https://a.com' })
+    const p2 = await pinUrl(space.id, { url: 'https://b.com' })
+    const p3 = await pinUrl(space.id, { url: 'https://c.com' })
+    // Only list p3 and p1 — p2 should land at the end.
+    await reorderPinnedUrls(space.id, [p3.id, p1.id])
+    const store = await loadStore()
+    const pins = store.spaces[space.id]?.pinnedUrls ?? []
+    expect(pins).toHaveLength(3)
+    expect(pins[0].id).toBe(p3.id)
+    expect(pins[1].id).toBe(p1.id)
+    expect(pins[2].id).toBe(p2.id)
   })
 })
