@@ -1,9 +1,10 @@
 import { defineManifest } from '@crxjs/vite-plugin'
+import pkg from './package.json' with { type: 'json' }
 
 export default defineManifest({
   manifest_version: 3,
   name: 'Spaces',
-  version: '0.2.0',
+  version: pkg.version,
   description: 'Arc-like sidebar for Chrome: Spaces, nested folders, GitHub Live folders.',
   permissions: ['tabs', 'tabGroups', 'storage', 'alarms', 'contextMenus', 'sidePanel'],
   host_permissions: ['https://api.github.com/*', 'https://github.com/login/*'],
