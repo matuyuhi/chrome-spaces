@@ -4,16 +4,252 @@ import { sendMessage, type UIFontSize } from '../../shared/messaging'
 import { type GitHubAuthMethod, type SpaceStore } from '../../shared/types'
 import { applyFontSize, FONT_LABELS, FONT_SCALE, tokens } from '../theme'
 import { LinkButton, PrimaryButton, SecondaryButton } from '../atoms/Button'
+import { Switch } from '../atoms/Switch'
+
+// ─── Layout ──────────────────────────────────────────────────────────────────
+
+const PageHeader = styled.header`
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid ${tokens.border};
+  margin-bottom: 8px;
+`
+
+const BackBtn = styled(LinkButton)`
+  font-size: 13px;
+  color: ${tokens.muted};
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+
+  &:hover {
+    color: ${tokens.accent};
+  }
+`
+
+const PageTitle = styled.h1`
+  margin: 0;
+  flex: 1;
+  font-size: 24px;
+  font-weight: 600;
+  color: ${tokens.fg};
+`
+
+// ─── Card (one per section group) ────────────────────────────────────────────
+
+const CardList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+`
+
+const Card = styled.section`
+  background: ${tokens.bgSoft};
+  border: 1px solid ${tokens.border};
+  border-radius: ${tokens.radius.lg};
+  padding: 0 24px;
+  overflow: hidden;
+`
+
+const CardHeading = styled.h2`
+  margin: 0 0 0 0;
+  padding: 16px 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: ${tokens.muted};
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid ${tokens.border};
+`
+
+// ─── Row (label + description left / control right) ──────────────────────────
+
+const Row = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+
+  &.last-row {
+    /* no border on the final row */
+  }
+
+  &:not(.last-row) {
+    border-bottom: 1px solid ${tokens.border};
+  }
+`
+
+const RowLabel = styled.div`
+  flex: 1;
+  min-width: 0;
+`
+
+const RowTitle = styled.p`
+  margin: 0;
+  font-size: 14px;
+  color: ${tokens.fg};
+  font-weight: 500;
+`
+
+const RowDesc = styled.p`
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: ${tokens.muted};
+  line-height: 1.5;
+
+  code {
+    background: ${tokens.bgHover};
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  a {
+    color: ${tokens.accent};
+  }
+`
+
+const RowControl = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+`
+
+// Full-width content area inside a card row (e.g. font picker, OAuth flow)
+const RowFull = styled.div`
+  padding: 16px 0;
+
+  &:not(.last-row) {
+    border-bottom: 1px solid ${tokens.border};
+  }
+`
+
+const RowFullTitle = styled.p`
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: ${tokens.fg};
+`
+
+const RowFullDesc = styled.p`
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: ${tokens.muted};
+  line-height: 1.5;
+
+  code {
+    background: ${tokens.bgHover};
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  a {
+    color: ${tokens.accent};
+  }
+
+  strong {
+    color: ${tokens.fg};
+  }
+`
+
+// ─── Font size picker ────────────────────────────────────────────────────────
+
+const SizePicker = styled.div`
+  display: flex;
+  gap: 4px;
+  background: ${tokens.bgHover};
+  border-radius: ${tokens.radius.md};
+  padding: 3px;
+`
+
+const SizeBtn = styled.button<{ isCurrent?: boolean }>`
+  flex: 1;
+  background: ${(p) => (p.isCurrent ? tokens.bg : 'transparent')};
+  color: ${(p) => (p.isCurrent ? tokens.accent : tokens.muted)};
+  border: none;
+  border-radius: ${tokens.radius.sm};
+  padding: 6px 0;
+  cursor: pointer;
+  font-weight: ${(p) => (p.isCurrent ? '600' : '400')};
+  font-size: 12px;
+  transition:
+    background ${tokens.duration.fast} ease,
+    color ${tokens.duration.fast} ease;
+  box-shadow: ${(p) =>
+    p.isCurrent ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'};
+
+  &:hover {
+    color: ${tokens.fg};
+    background: ${(p) => (p.isCurrent ? tokens.bg : tokens.bgSoft)};
+  }
+`
+
+// ─── Inline text input ───────────────────────────────────────────────────────
+
+const TextInput = styled.input`
+  background: ${tokens.bg};
+  color: ${tokens.fg};
+  border: 1px solid ${tokens.border};
+  border-radius: ${tokens.radius.md};
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color ${tokens.duration.fast} ease;
+  width: 100%;
+
+  &:focus {
+    border-color: ${tokens.accent};
+  }
+`
+
+const NumberInput = styled.input`
+  background: ${tokens.bg};
+  color: ${tokens.fg};
+  border: 1px solid ${tokens.border};
+  border-radius: ${tokens.radius.md};
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  width: 80px;
+  text-align: center;
+  transition: border-color ${tokens.duration.fast} ease;
+
+  &:focus {
+    border-color: ${tokens.accent};
+  }
+`
+
+// ─── Status badge ────────────────────────────────────────────────────────────
+
+const StatusBadge = styled.span<{ ok?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: ${(p) => (p.ok ? tokens.accent : tokens.muted)};
+`
+
+// ─── Device code flow ────────────────────────────────────────────────────────
 
 const DeviceCodeBox = styled.div`
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: ${tokens.bgSoft};
+  background: ${tokens.bg};
   border: 1px solid ${tokens.accent};
   border-radius: ${tokens.radius.md};
-  padding: 12px;
-  margin-top: 4px;
+  padding: 14px;
+  margin-top: 8px;
 `
 
 const DeviceCodeRow = styled.div`
@@ -31,104 +267,82 @@ const DeviceCode = styled.div`
   color: ${tokens.fg};
   text-align: center;
   padding: 8px 0;
-  background: ${tokens.bg};
+  background: ${tokens.bgSoft};
   border-radius: ${tokens.radius.sm};
   user-select: all;
 `
 
-const Section = styled.section`
+const InlineActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+`
+
+const MutedText = styled.span`
+  font-size: 12px;
+  color: ${tokens.muted};
+`
+
+const ErrorText = styled.p`
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: ${tokens.danger};
+`
+
+// ─── Preferred auth toggle ────────────────────────────────────────────────────
+
+const RadioGroup = styled.div`
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+`
+
+const RadioLabel = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: ${tokens.fg};
+  cursor: pointer;
+`
+
+// ─── Summary/details reset ───────────────────────────────────────────────────
+
+const AdvancedDetails = styled.details`
+  margin-top: 12px;
+
+  summary {
+    font-size: 12px;
+    color: ${tokens.muted};
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: '▶ ';
+      font-size: 10px;
+    }
+  }
+
+  &[open] summary::before {
+    content: '▼ ';
+  }
+`
+
+const AdvancedBody = styled.div`
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-
-  h2 {
-    font-size: 11px;
-    margin: 0;
-    font-weight: 600;
-    color: ${tokens.muted};
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  input[type='password'],
-  input[type='text'] {
-    background: ${tokens.bg};
-    color: ${tokens.fg};
-    border: 1px solid ${tokens.border};
-    border-radius: ${tokens.radius.md};
-    padding: 6px 8px;
-    font: inherit;
-    outline: none;
-  }
-
-  a {
-    color: ${tokens.accent};
-  }
-
-  code {
-    background: ${tokens.bgSoft};
-    padding: 1px 4px;
-    border-radius: 3px;
-    font-size: 11px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-
-  .muted {
-    font-size: 11px;
-    color: ${tokens.muted};
-    margin: 0;
-    line-height: 1.5;
-  }
 `
 
-const Actions = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-`
-
-const SizePicker = styled.div`
-  display: flex;
-  gap: 4px;
-`
-
-const SizeBtn = styled.button<{ isCurrent?: boolean }>`
-  flex: 1;
-  background: ${(p) => (p.isCurrent ? tokens.accentSoft : tokens.bgSoft)};
-  color: ${(p) => (p.isCurrent ? tokens.accent : tokens.muted)};
-  border: none;
-  border-radius: ${tokens.radius.md};
-  padding: 8px 0;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 12px;
-  transition:
-    background ${tokens.duration.fast} ease,
-    color ${tokens.duration.fast} ease;
-
-  &:hover {
-    background: ${tokens.bgHover};
-    color: ${tokens.fg};
-  }
-`
-
-const Header = styled.header`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 24px;
-
-  h1 {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    margin: 0;
-    flex: 1;
-    color: ${tokens.subtle};
-    text-transform: uppercase;
-  }
-`
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [token, setToken] = useState('')
@@ -296,15 +510,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       setOauthState({ phase: 'error', message: e instanceof Error ? e.message : String(e) })
       return
     }
-    // Prefill the user_code so the verification page lands on the
-    // confirmation step instead of an empty input.
     const verificationUri = `${device.verificationUri}?user_code=${encodeURIComponent(device.userCode)}`
     setOauthState({
       phase: 'awaiting',
       userCode: device.userCode,
       verificationUri,
     })
-    // Best-effort copy so the user doesn't even need to type.
     void navigator.clipboard.writeText(device.userCode).catch(() => {
       /* clipboard API can be denied; the on-screen Copy button covers it */
     })
@@ -378,328 +589,369 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <Header>
-        <LinkButton onClick={onClose}>← Back</LinkButton>
-        <h1>Settings</h1>
-        <span />
-      </Header>
+      {/* ── Page header ─────────────────────────────────────────────────── */}
+      <PageHeader>
+        <BackBtn onClick={onClose}>← Back</BackBtn>
+        <PageTitle>Settings</PageTitle>
+      </PageHeader>
 
-      <Section>
-        <h2>Font size</h2>
-        <SizePicker>
-          {([1, 2, 3, 4, 5] as UIFontSize[]).map((s) => (
-            <SizeBtn
-              key={s}
-              isCurrent={s === fontSize}
-              onClick={() => void handleSize(s)}
-              title={`Scale ×${FONT_SCALE[s]}`}
-            >
-              {FONT_LABELS[s]}
-            </SizeBtn>
-          ))}
-        </SizePicker>
-      </Section>
+      <CardList>
+        {/* ── Appearance ──────────────────────────────────────────────── */}
+        <Card>
+          <CardHeading>Appearance</CardHeading>
 
-      <Section>
-        <h2>Folder controls</h2>
-        <p className="muted">
-          Show the hover-revealed <code>+ Folder</code> /{' '}
-          <code>+ Live folder</code> row inside nested folders too. Off by
-          default — the <code>…</code> menu always exposes both actions, so
-          turning this off keeps deeply-nested rows from juddering on hover.
-        </p>
-        <Actions>
-          <label
-            style={{
-              display: 'inline-flex',
-              gap: 6,
-              alignItems: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={showAddRowsInNestedFolders}
-              onChange={(e) => void handleNestedAddRows(e.target.checked)}
-            />
-            <span>Show on nested folders</span>
-          </label>
-        </Actions>
-      </Section>
+          {/* Font size */}
+          <RowFull>
+            <RowFullTitle>Font size</RowFullTitle>
+            <SizePicker>
+              {([1, 2, 3, 4, 5] as UIFontSize[]).map((s) => (
+                <SizeBtn
+                  key={s}
+                  isCurrent={s === fontSize}
+                  onClick={() => void handleSize(s)}
+                  title={`Scale ×${FONT_SCALE[s]}`}
+                >
+                  {FONT_LABELS[s]}
+                </SizeBtn>
+              ))}
+            </SizePicker>
+          </RowFull>
 
-      <Section>
-        <h2>Auto-archive</h2>
-        <p className="muted">
-          Move tabs you haven't touched in N days into a per-Space{' '}
-          <code>Archive</code> folder. Live folder tabs are never archived.
-          Set 0 to disable. Runs once a day.
-        </p>
-        <Actions>
-          <input
-            type="number"
-            min={0}
-            max={365}
-            value={autoArchiveDays}
-            onChange={(e) => void handleArchiveDays(e.target.value)}
-            style={{ width: 80 }}
-          />
-          <span className="muted">days (0 = disabled)</span>
-          {archiveSavedAt && <span className="muted">Saved.</span>}
-        </Actions>
-      </Section>
+          {/* Folder controls */}
+          <Row>
+            <RowLabel>
+              <RowTitle>Add-row controls in nested folders</RowTitle>
+              <RowDesc>
+                Show the hover-revealed <code>+ Folder</code> /{' '}
+                <code>+ Live folder</code> row inside nested folders too. Off
+                by default — the <code>…</code> menu always exposes both
+                actions.
+              </RowDesc>
+            </RowLabel>
+            <RowControl>
+              <Switch
+                checked={showAddRowsInNestedFolders}
+                onChange={(next) => void handleNestedAddRows(next)}
+              />
+            </RowControl>
+          </Row>
 
-      <Section>
-        <h2>Backup</h2>
-        <p className="muted">
-          Export saves Spaces / folders / Live configs to a JSON file. Import
-          replaces the current setup with the file's contents (tab references
-          are stripped — tabs themselves are session-scoped).
-        </p>
-        <Actions>
-          <SecondaryButton onClick={() => void handleExport()}>
-            Export…
-          </SecondaryButton>
-          <SecondaryButton onClick={() => fileInputRef.current?.click()}>
-            Import…
-          </SecondaryButton>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/json,.json"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) void handleImportFile(file)
-              e.target.value = ''
-            }}
-          />
-          {backupStatus && <span className="muted">{backupStatus}</span>}
-        </Actions>
-      </Section>
-
-      <Section>
-        <h2>GitHub credential</h2>
-        <p className="muted">
-          Live folders need a GitHub credential. Pick whichever option fits —
-          OAuth gives revocable, per-app access; a PAT is faster to set up if
-          you already have one. You can keep <strong>both</strong> saved and
-          switch which one Live folders use below.
-        </p>
-        {hasOauth && hasPat && (
-          <div>
-            <p className="muted" style={{ marginBottom: 4 }}>
-              Live folders currently use:
-            </p>
-            <Actions>
-              <label
-                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          {/* Side panel position */}
+          <Row className="last-row">
+            <RowLabel>
+              <RowTitle>Side panel position</RowTitle>
+              <RowDesc>
+                Whether the side panel appears on the left or right is a Chrome
+                preference, not an extension setting.
+              </RowDesc>
+            </RowLabel>
+            <RowControl>
+              <SecondaryButton
+                onClick={() => {
+                  void chrome.tabs.create({
+                    url: 'chrome://settings/appearance',
+                  })
+                }}
               >
-                <input
-                  type="radio"
-                  name="preferred-auth"
-                  checked={(preferred ?? active) === 'oauth'}
-                  onChange={() => void handlePreferred('oauth')}
-                />
-                OAuth token
-              </label>
-              <label
-                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <input
-                  type="radio"
-                  name="preferred-auth"
-                  checked={(preferred ?? active) === 'pat'}
-                  onChange={() => void handlePreferred('pat')}
-                />
-                Personal Access Token
-              </label>
-            </Actions>
-          </div>
-        )}
-        {(hasOauth || hasPat) && (
-          <p className="muted">
-            Active:{' '}
-            {active === 'oauth'
-              ? '✓ OAuth token'
-              : active === 'pat'
-                ? '✓ Personal Access Token'
-                : '— none'}
-          </p>
-        )}
-      </Section>
+                Open Chrome settings…
+              </SecondaryButton>
+            </RowControl>
+          </Row>
+        </Card>
 
-      <Section>
-        <h2>Option A — Sign in with OAuth (Device Flow)</h2>
-        <p className="muted">
-          {hasBuiltin
-            ? 'This build ships a maintainer-registered OAuth App. Click "Sign in with GitHub" below — a tab opens, you enter the displayed code, and the access token comes back here.'
-            : 'No OAuth App is bundled in this build. Either rebuild with VITE_GITHUB_CLIENT_ID set in .env, or paste a Client ID under "Advanced" below.'}
-        </p>
-        <p className="muted">
-          Status:{' '}
-          {hasOverride === undefined
-            ? '…'
-            : hasOverride
-              ? '✓ using override Client ID'
-              : hasBuiltin
-                ? '✓ using built-in Client ID'
-                : '— no Client ID available'}
-        </p>
-        <p className="muted">
-          OAuth token:{' '}
-          {hasOauth === undefined
-            ? '…'
-            : hasOauth
-              ? '✓ saved'
-              : '— not signed in'}
-        </p>
-        <Actions>
-          <PrimaryButton
-            onClick={() => void handleStartOAuth()}
-            disabled={!canSignIn || oauthState.phase === 'awaiting'}
-          >
-            {oauthState.phase === 'awaiting'
-              ? 'Waiting…'
-              : hasOauth
-                ? 'Re-authorize'
-                : 'Sign in with GitHub'}
-          </PrimaryButton>
-          {hasOauth && (
-            <SecondaryButton onClick={() => void handleSignOutOauth()}>
-              Sign out
-            </SecondaryButton>
+        {/* ── Tabs ────────────────────────────────────────────────────── */}
+        <Card>
+          <CardHeading>Tabs</CardHeading>
+
+          <Row className="last-row">
+            <RowLabel>
+              <RowTitle>Auto-archive</RowTitle>
+              <RowDesc>
+                Move tabs untouched for N days into a per-Space{' '}
+                <code>Archive</code> folder. Live folder tabs are never
+                archived. Set 0 to disable. Runs once a day.
+              </RowDesc>
+            </RowLabel>
+            <RowControl>
+              <NumberInput
+                type="number"
+                min={0}
+                max={365}
+                value={autoArchiveDays}
+                onChange={(e) => void handleArchiveDays(e.target.value)}
+              />
+              <MutedText>days</MutedText>
+              {archiveSavedAt && <MutedText>Saved.</MutedText>}
+            </RowControl>
+          </Row>
+        </Card>
+
+        {/* ── GitHub integration ──────────────────────────────────────── */}
+        <Card>
+          <CardHeading>GitHub integration</CardHeading>
+
+          {/* Preferred method (only shown when both are saved) */}
+          {hasOauth && hasPat && (
+            <Row>
+              <RowLabel>
+                <RowTitle>Active credential</RowTitle>
+                <RowDesc>
+                  You have both an OAuth token and a PAT saved. Choose which
+                  one Live folders use.
+                </RowDesc>
+              </RowLabel>
+              <RowControl>
+                <RadioGroup>
+                  <RadioLabel>
+                    <input
+                      type="radio"
+                      name="preferred-auth"
+                      checked={(preferred ?? active) === 'oauth'}
+                      onChange={() => void handlePreferred('oauth')}
+                    />
+                    OAuth
+                  </RadioLabel>
+                  <RadioLabel>
+                    <input
+                      type="radio"
+                      name="preferred-auth"
+                      checked={(preferred ?? active) === 'pat'}
+                      onChange={() => void handlePreferred('pat')}
+                    />
+                    PAT
+                  </RadioLabel>
+                </RadioGroup>
+              </RowControl>
+            </Row>
           )}
-        </Actions>
-        <details>
-          <summary
-            style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer' }}
-          >
-            Advanced — Override OAuth Client ID
-          </summary>
-          <p className="muted">
-            Use a different OAuth App for this device only. Create one at{' '}
-            <a
-              href="https://github.com/settings/applications/new"
-              target="_blank"
-              rel="noreferrer"
-            >
-              github.com/settings/applications/new
-            </a>
-            , enable <strong>Device Flow</strong>, then paste the Client ID
-            here. Clear to fall back to the built-in.
-          </p>
-          <input
-            type="text"
-            autoComplete="off"
-            placeholder="Iv1.xxxxxxxxxxxx"
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-          />
-          <Actions>
-            <SecondaryButton onClick={() => void handleSaveClientId()}>
-              {clientId.trim() ? 'Save override' : hasOverride ? 'Clear override' : 'Save'}
-            </SecondaryButton>
-          </Actions>
-        </details>
-        {oauthState.phase === 'awaiting' && (
-          <DeviceCodeBox>
-            <p className="muted" style={{ margin: 0 }}>
-              Enter this code at{' '}
+
+          {/* Status summary row */}
+          {(hasOauth !== undefined || hasPat !== undefined) && (
+            <Row>
+              <RowLabel>
+                <RowTitle>Status</RowTitle>
+              </RowLabel>
+              <RowControl>
+                <StatusBadge ok={!!(hasOauth || hasPat)}>
+                  {active === 'oauth'
+                    ? '✓ OAuth token active'
+                    : active === 'pat'
+                      ? '✓ PAT active'
+                      : '— not authenticated'}
+                </StatusBadge>
+              </RowControl>
+            </Row>
+          )}
+
+          {/* Option A — OAuth */}
+          <RowFull>
+            <RowFullTitle>Option A — Sign in with OAuth (Device Flow)</RowFullTitle>
+            <RowFullDesc>
+              {hasBuiltin
+                ? 'This build ships a maintainer-registered OAuth App. Click "Sign in with GitHub" — a tab opens, you enter the displayed code, and the access token comes back here.'
+                : 'No OAuth App is bundled in this build. Either rebuild with VITE_GITHUB_CLIENT_ID set in .env, or paste a Client ID in the advanced section below.'}{' '}
+              OAuth token:{' '}
+              {hasOauth === undefined
+                ? '…'
+                : hasOauth
+                  ? '✓ saved'
+                  : '— not signed in'}
+            </RowFullDesc>
+            <InlineActions>
+              <PrimaryButton
+                onClick={() => void handleStartOAuth()}
+                disabled={!canSignIn || oauthState.phase === 'awaiting'}
+              >
+                {oauthState.phase === 'awaiting'
+                  ? 'Waiting…'
+                  : hasOauth
+                    ? 'Re-authorize'
+                    : 'Sign in with GitHub'}
+              </PrimaryButton>
+              {hasOauth && (
+                <SecondaryButton onClick={() => void handleSignOutOauth()}>
+                  Sign out
+                </SecondaryButton>
+              )}
+            </InlineActions>
+
+            {oauthState.phase === 'awaiting' && (
+              <DeviceCodeBox>
+                <RowFullDesc style={{ margin: 0 }}>
+                  Enter this code at{' '}
+                  <a
+                    href={oauthState.verificationUri}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {oauthState.verificationUri}
+                  </a>{' '}
+                  (a tab was opened for you):
+                </RowFullDesc>
+                <DeviceCodeRow>
+                  <DeviceCode>{oauthState.userCode}</DeviceCode>
+                  <SecondaryButton
+                    onClick={() => {
+                      void navigator.clipboard.writeText(oauthState.userCode)
+                      setCodeCopiedAt(Date.now())
+                      setTimeout(() => setCodeCopiedAt(undefined), 1500)
+                    }}
+                  >
+                    {codeCopiedAt ? 'Copied!' : 'Copy'}
+                  </SecondaryButton>
+                </DeviceCodeRow>
+                <RowFullDesc style={{ margin: 0 }}>
+                  Keep this page open — it polls until you approve.
+                </RowFullDesc>
+              </DeviceCodeBox>
+            )}
+            {oauthState.phase === 'error' && (
+              <ErrorText>{oauthState.message}</ErrorText>
+            )}
+
+            <AdvancedDetails>
+              <summary>Advanced — Override OAuth Client ID</summary>
+              <AdvancedBody>
+                <RowFullDesc style={{ margin: 0 }}>
+                  Client ID status:{' '}
+                  {hasOverride === undefined
+                    ? '…'
+                    : hasOverride
+                      ? '✓ using override'
+                      : hasBuiltin
+                        ? '✓ using built-in'
+                        : '— no Client ID available'}{' '}
+                  · Create an OAuth App at{' '}
+                  <a
+                    href="https://github.com/settings/applications/new"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    github.com/settings/applications/new
+                  </a>
+                  , enable <strong>Device Flow</strong>, then paste the Client
+                  ID here. Clear to fall back to the built-in.
+                </RowFullDesc>
+                <TextInput
+                  type="text"
+                  autoComplete="off"
+                  placeholder="Iv1.xxxxxxxxxxxx"
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                />
+                <InlineActions>
+                  <SecondaryButton onClick={() => void handleSaveClientId()}>
+                    {clientId.trim()
+                      ? 'Save override'
+                      : hasOverride
+                        ? 'Clear override'
+                        : 'Save'}
+                  </SecondaryButton>
+                </InlineActions>
+              </AdvancedBody>
+            </AdvancedDetails>
+          </RowFull>
+
+          {/* Option B — PAT */}
+          <RowFull>
+            <RowFullTitle>Option B — Personal Access Token</RowFullTitle>
+            <RowFullDesc>
+              Stored only in <code>chrome.storage.local</code> on this device
+              — never synced. PAT:{' '}
+              {hasPat === undefined ? '…' : hasPat ? '✓ saved' : '— not set'}
+              .{' '}
+              Required scopes: <code>repo</code> (private) or{' '}
+              <code>public_repo</code>. Generate at{' '}
               <a
-                href={oauthState.verificationUri}
+                href="https://github.com/settings/tokens?type=beta"
                 target="_blank"
                 rel="noreferrer"
               >
-                {oauthState.verificationUri}
-              </a>{' '}
-              (a tab was opened for you):
-            </p>
-            <DeviceCodeRow>
-              <DeviceCode>{oauthState.userCode}</DeviceCode>
-              <SecondaryButton
-                onClick={() => {
-                  void navigator.clipboard.writeText(oauthState.userCode)
-                  setCodeCopiedAt(Date.now())
-                  setTimeout(() => setCodeCopiedAt(undefined), 1500)
-                }}
-              >
-                {codeCopiedAt ? 'Copied!' : 'Copy'}
+                github.com/settings/tokens
+              </a>
+              .
+            </RowFullDesc>
+            <TextInput
+              type="password"
+              autoComplete="off"
+              placeholder="ghp_..."
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
+            <InlineActions style={{ marginTop: 8 }}>
+              <PrimaryButton onClick={handleSave} disabled={!token && !hasPat}>
+                {token ? 'Save PAT' : hasPat ? 'Clear PAT' : 'Save'}
+              </PrimaryButton>
+              {saved && <MutedText>Saved.</MutedText>}
+            </InlineActions>
+          </RowFull>
+
+          {/* GitHub Enterprise */}
+          <RowFull className="last-row">
+            <RowFullTitle>GitHub Enterprise base URL (optional)</RowFullTitle>
+            <RowFullDesc>
+              Point Live folders at a GHES instance. Leave empty to use{' '}
+              <code>api.github.com</code>. Format:{' '}
+              <code>https://ghe.example.com/api/v3</code>. Saving prompts
+              Chrome for permission to fetch from that origin. Status:{' '}
+              {baseUrlIsCustom ? '✓ custom base URL' : '— using api.github.com'}
+            </RowFullDesc>
+            <TextInput
+              type="text"
+              autoComplete="off"
+              placeholder="https://ghe.example.com/api/v3"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+            />
+            <InlineActions style={{ marginTop: 8 }}>
+              <PrimaryButton onClick={() => void handleSaveBaseUrl()}>
+                {baseUrl.trim()
+                  ? 'Save base URL'
+                  : baseUrlIsCustom
+                    ? 'Revert'
+                    : 'Save'}
+              </PrimaryButton>
+              {baseUrlStatus && <MutedText>{baseUrlStatus}</MutedText>}
+            </InlineActions>
+          </RowFull>
+        </Card>
+
+        {/* ── Backup ──────────────────────────────────────────────────── */}
+        <Card>
+          <CardHeading>Backup</CardHeading>
+
+          <Row className="last-row">
+            <RowLabel>
+              <RowTitle>Export / Import</RowTitle>
+              <RowDesc>
+                Export saves Spaces, folders, and Live configs to a JSON file.
+                Import replaces the current setup (tab references are stripped
+                — tabs are session-scoped).
+              </RowDesc>
+            </RowLabel>
+            <RowControl>
+              <SecondaryButton onClick={() => void handleExport()}>
+                Export…
               </SecondaryButton>
-            </DeviceCodeRow>
-            <p className="muted" style={{ margin: 0 }}>
-              Keep this side panel open — it polls until you approve.
-            </p>
-          </DeviceCodeBox>
-        )}
-        {oauthState.phase === 'error' && (
-          <p className="muted" style={{ color: 'tomato' }}>
-            {oauthState.message}
-          </p>
-        )}
-      </Section>
-
-      <Section>
-        <h2>Option B — Personal Access Token</h2>
-        <p className="muted">
-          Paste a PAT directly. Stored only in{' '}
-          <code>chrome.storage.local</code> on this device — never synced.
-        </p>
-        <p className="muted">
-          PAT: {hasPat === undefined ? '…' : hasPat ? '✓ saved' : '— not set'}
-        </p>
-        <input
-          type="password"
-          autoComplete="off"
-          placeholder="ghp_..."
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-        />
-        <Actions>
-          <PrimaryButton onClick={handleSave} disabled={!token && !hasPat}>
-            {token ? 'Save PAT' : hasPat ? 'Clear PAT' : 'Save'}
-          </PrimaryButton>
-          {saved && <span className="muted">Saved.</span>}
-        </Actions>
-        <p className="muted">
-          Required scopes: <code>repo</code> (private PRs/issues) or{' '}
-          <code>public_repo</code>. Generate at{' '}
-          <a
-            href="https://github.com/settings/tokens?type=beta"
-            target="_blank"
-            rel="noreferrer"
-          >
-            github.com/settings/tokens
-          </a>
-          .
-        </p>
-      </Section>
-
-      <Section>
-        <h2>GitHub Enterprise (optional)</h2>
-        <p className="muted">
-          Point Live folders at a GHES instance. Leave empty to use{' '}
-          <code>api.github.com</code>. Format:{' '}
-          <code>https://ghe.example.com/api/v3</code>. Saving prompts Chrome
-          for permission to fetch from that origin.
-        </p>
-        <p className="muted">
-          Status:{' '}
-          {baseUrlIsCustom ? '✓ custom base URL' : '— using api.github.com'}
-        </p>
-        <input
-          type="text"
-          autoComplete="off"
-          placeholder="https://ghe.example.com/api/v3"
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-        />
-        <Actions>
-          <PrimaryButton onClick={() => void handleSaveBaseUrl()}>
-            {baseUrl.trim() ? 'Save base URL' : baseUrlIsCustom ? 'Revert' : 'Save'}
-          </PrimaryButton>
-          {baseUrlStatus && <span className="muted">{baseUrlStatus}</span>}
-        </Actions>
-      </Section>
+              <SecondaryButton onClick={() => fileInputRef.current?.click()}>
+                Import…
+              </SecondaryButton>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json,.json"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) void handleImportFile(file)
+                  e.target.value = ''
+                }}
+              />
+              {backupStatus && <MutedText>{backupStatus}</MutedText>}
+            </RowControl>
+          </Row>
+        </Card>
+      </CardList>
     </>
   )
 }
