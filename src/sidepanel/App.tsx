@@ -21,13 +21,11 @@ import {
   LiveFolderForm,
   type LiveFolderFormResult,
 } from './organisms/LiveFolderForm'
-import { SettingsPanel } from './organisms/SettingsPanel'
 import { CommandBar } from './organisms/CommandBar'
 import { GlobalStyles } from './globalStyles'
 
 type View =
   | { kind: 'list' }
-  | { kind: 'settings' }
   | { kind: 'live-create'; parentFolderId: FolderId }
   | { kind: 'live-edit'; folderId: FolderId }
 
@@ -66,6 +64,7 @@ export function App() {
 
   const refreshPrefs = useCallback(async () => {
     const next = await sendMessage({ type: 'getUIPrefs' })
+    applyFontSize(next.fontSize)
     setPrefs(next)
   }, [])
 
@@ -175,14 +174,17 @@ export function App() {
     void refresh()
   }, [refresh])
 
-  // Throttled in the SW (30s). Triggered on mount and whenever the panel
-  // regains visibility, since MV3 SWs can miss tab-close events while
-  // suspended and leave zombie tab refs in the store.
+  // Throttled reconcile in the SW (30s). Triggered on mount and whenever
+  // the panel regains visibility, since MV3 SWs can miss tab-close events
+  // while suspended and leave zombie tab refs in the store. Also refresh
+  // UI prefs on visibility — the options tab is a separate document and
+  // any change there only reaches us once the user returns.
   useEffect(() => {
     const sweep = () => {
       void sendMessage({ type: 'reconcile' }).then((res) => {
         if (res.dropped > 0) void refresh()
       })
+      void refreshPrefs()
     }
     sweep()
     const onVisible = () => {
@@ -190,7 +192,7 @@ export function App() {
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [refresh])
+  }, [refresh, refreshPrefs])
 
   useEffect(() => {
     void sendMessage({ type: 'getUIPrefs' }).then((next) => {
@@ -329,22 +331,6 @@ export function App() {
 
   const handleError = (e: unknown) =>
     setError(e instanceof Error ? e.message : String(e))
-
-  if (view.kind === 'settings') {
-    return (
-      <>
-        <GlobalStyles />
-        <Root>
-          <SettingsPanel
-            onClose={() => {
-              setView({ kind: 'list' })
-              void refreshPrefs()
-            }}
-          />
-        </Root>
-      </>
-    )
-  }
 
   if (view.kind === 'live-create') {
     return (
@@ -499,7 +485,7 @@ export function App() {
               handleError(e)
             }
           }}
-          onOpenSettings={() => setView({ kind: 'settings' })}
+          onOpenSettings={() => chrome.runtime.openOptionsPage()}
         />
 
         {error && (
