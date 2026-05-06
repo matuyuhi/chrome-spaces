@@ -49,7 +49,8 @@ const SAMPLE_PINS: PinnedUrl[] = [
   },
 ]
 
-// Empty state — drop zone only visible
+// Empty state — bar renders nothing (no DOM, just null). Pinning happens
+// via TabMenu now, so an empty bar has no purpose to occupy.
 export const Empty: Story = {
   render: () => {
     const { store, tabs } = makeFixture()

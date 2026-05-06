@@ -27,7 +27,12 @@ function normalizeUrl(raw: string): string {
 
 // ---- styles ---------------------------------------------------------------
 
-const Bar = styled.div<{ isOver: boolean }>`
+// Pin entry / removal happens via TabMenu now ("Pin URL to bar" /
+// "Remove from pin bar"), so the bar no longer doubles as a drop target.
+// Earlier attempts to use the bar as a DnD landing zone broke the HTML5
+// drag whenever its layout changed mid-drag — the menu-driven path
+// dodges that entire class of problem.
+const Bar = styled.div`
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -36,11 +41,7 @@ const Bar = styled.div<{ isOver: boolean }>`
   padding: 4px 4px;
   min-height: 36px;
   border-radius: ${tokens.radius.md};
-  border: 1.5px dashed
-    ${(p) => (p.isOver ? tokens.accent : tokens.border)};
-  background: ${(p) => (p.isOver ? tokens.accentSoft : 'transparent')};
-  transition: border-color ${tokens.duration.fast} ease,
-              background ${tokens.duration.fast} ease;
+  background: transparent;
   margin-bottom: 4px;
   position: relative;
 `
@@ -92,7 +93,6 @@ export function PinnedBar({
 }) {
   const ctx = useAppCtx()
   const pins = pinnedUrls ?? []
-  const [isOver, setIsOver] = useState(false)
   // Per-block anchor decided when its menu opens — flips between left
   // and right based on which side has room in the side panel viewport.
   const [menuAnchors, setMenuAnchors] = useState<Record<string, 'left' | 'right'>>(
@@ -110,48 +110,9 @@ export function PinnedBar({
     return set
   }, [ctx.tabs])
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    // Only accept tab items (not folder drags)
-    if (ctx.drag?.kind === 'item' && ctx.drag.item.kind === 'tab') {
-      e.preventDefault()
-      // ItemRow's onDragStart sets effectAllowed='move'. The dropEffect
-      // here MUST be a compatible value (move) — setting 'copy' makes
-      // Chrome silently suppress the drop event entirely (dragover still
-      // fires, but drop never does).
-      e.dataTransfer.dropEffect = 'move'
-      setIsOver(true)
-    }
-  }
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    // Only clear when leaving the bar itself (not a child element)
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setIsOver(false)
-    }
-  }
-
-  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsOver(false)
-    if (ctx.drag?.kind !== 'item' || ctx.drag.item.kind !== 'tab') return
-
-    const { tabId } = ctx.drag.item
-    const tab = ctx.tabs[tabId]
-    if (!tab?.url) return
-
-    try {
-      await sendMessage({
-        type: 'pinUrl',
-        spaceId,
-        url: tab.url,
-        title: tab.title,
-        favIconUrl: tab.favIconUrl,
-      })
-      await ctx.refresh()
-    } catch (e) {
-      ctx.onError(e)
-    }
-  }
+  // Hide entirely when nothing is pinned. Safe to unmount because there
+  // is no DnD interaction with this bar — pinning happens via TabMenu.
+  if (pins.length === 0) return null
 
   const handleClickPin = async (pin: PinnedUrl) => {
     // 1. Try to find an existing tab with a normalized-URL match. Falls
@@ -178,12 +139,28 @@ export function PinnedBar({
     }
   }
 
-  const handleUnpin = async (pinnedId: string) => {
+  const handleUnpin = async (pin: PinnedUrl) => {
     // Close the menu optimistically so the UI feels instant; refresh
     // catches up with the actual store after the round-trip.
     ctx.setOpenMenu(undefined)
     try {
-      await sendMessage({ type: 'unpinUrl', spaceId, pinnedId })
+      // Pinning closed the source tab, so unpinning should bring it
+      // back into the Space — unless the URL is already open (e.g. the
+      // user clicked the pin earlier). Skip the recreate in that case
+      // to avoid duplicates. registerTab will append the new tab to
+      // the active Space's root folder.
+      const target = normalizeUrl(pin.url)
+      const existingTab = Object.values(ctx.tabs).find(
+        (t) => !t.hidden && t.url && normalizeUrl(t.url) === target,
+      )
+      if (!existingTab) {
+        await chrome.tabs.create({
+          url: pin.url,
+          windowId: ctx.windowId,
+          active: false,
+        })
+      }
+      await sendMessage({ type: 'unpinUrl', spaceId, pinnedId: pin.id })
       await ctx.refresh()
     } catch (e) {
       ctx.onError(e)
@@ -191,12 +168,7 @@ export function PinnedBar({
   }
 
   return (
-    <Bar
-      isOver={isOver}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
+    <Bar>
       {pins.map((pin) => {
         const menuId = `pinned:${pin.id}`
         const isActive = openUrlSet.has(normalizeUrl(pin.url))
@@ -232,7 +204,7 @@ export function PinnedBar({
             {ctx.openMenu === menuId && (
               <PinnedMenu
                 anchor={menuAnchors[pin.id] ?? 'left'}
-                onUnpin={() => void handleUnpin(pin.id)}
+                onUnpin={() => void handleUnpin(pin)}
                 onClose={() => ctx.setOpenMenu(undefined)}
               />
             )}

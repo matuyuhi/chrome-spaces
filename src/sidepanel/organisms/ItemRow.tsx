@@ -5,6 +5,24 @@ import { type DropPos, dropPosKey } from '../dnd'
 import { TabMenu } from './menus'
 import { FolderView } from './FolderView'
 import { Minus, X } from '../atoms/icons'
+
+// Same normalization as the bg side / PinnedBar: trim, drop fragment,
+// drop a trailing slash on non-root paths. Inlined here too so the
+// "pin hides matching tab row" filter stays consistent.
+function normalizeForPinMatch(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  try {
+    const u = new URL(trimmed)
+    u.hash = ''
+    if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
+      u.pathname = u.pathname.slice(0, -1)
+    }
+    return u.toString()
+  } catch {
+    return trimmed
+  }
+}
 import {
   CloseButton,
   Favicon,
@@ -58,6 +76,25 @@ export function ItemRow({
   const isPinned = !!tabRecord?.baseUrl
   const tabMenuId = `tab:${item.tabId}`
   const resetTargetUrl = tabRecord?.baseUrl
+
+  // Pin-bar membership lookup against the active Space (the one this side
+  // panel is currently rendering). Live folder tabs never get pin-bar
+  // affordances since the sync engine owns their tabIds.
+  const activeSpaceId = ctx.store.activeSpaceByWindow[ctx.windowId]
+  const activeSpace = activeSpaceId ? ctx.store.spaces[activeSpaceId] : undefined
+  const tabUrl = tab?.url
+  const isInPinBar =
+    !!tabUrl &&
+    !!activeSpace?.pinnedUrls?.some(
+      (p) => normalizeForPinMatch(p.url) === normalizeForPinMatch(tabUrl),
+    )
+  const canAddToPinBar = !parentIsLive && !!activeSpaceId && !!tabUrl
+
+  // While this URL is pinned in the active Space, hide the tab row —
+  // the pin block already represents it. Live folder rows are exempt
+  // because they're sync-engine-owned. Don't hide when the pin row is
+  // not in the *active* Space (multi-space windows shouldn't bleed).
+  if (!parentIsLive && isInPinBar) return null
   const hasResetTarget = !!resetTargetUrl
 
   const isDragging =
@@ -185,6 +222,8 @@ export function ItemRow({
           canReset={hasResetTarget}
           canPin={!parentIsLive && !isPinned}
           canUnpin={!parentIsLive && isPinned}
+          isInPinBar={isInPinBar}
+          canAddToPinBar={canAddToPinBar}
           onClose={() => ctx.setOpenMenu(undefined)}
           onPin={async () => {
             const url = tab?.url
@@ -201,6 +240,43 @@ export function ItemRow({
             try {
               await sendMessage({ type: 'unpinTab', tabId: item.tabId })
               ctx.setOpenMenu(undefined)
+              await ctx.refresh()
+            } catch (e) {
+              ctx.onError(e)
+            }
+          }}
+          onAddToPinBar={async () => {
+            if (!activeSpaceId || !tabUrl) return
+            ctx.setOpenMenu(undefined)
+            try {
+              await sendMessage({
+                type: 'pinUrl',
+                spaceId: activeSpaceId,
+                url: tabUrl,
+                title: tab?.title,
+                favIconUrl: tab?.favIconUrl,
+              })
+              // Don't close the underlying Chrome tab — the row just gets
+              // hidden in this Space's list (the URL is now represented
+              // by the pin block). Unpin re-shows the row.
+              await ctx.refresh()
+            } catch (e) {
+              ctx.onError(e)
+            }
+          }}
+          onRemoveFromPinBar={async () => {
+            if (!activeSpaceId || !tabUrl) return
+            const target = activeSpace?.pinnedUrls?.find(
+              (p) => p.url === tabUrl,
+            )
+            if (!target) return
+            ctx.setOpenMenu(undefined)
+            try {
+              await sendMessage({
+                type: 'unpinUrl',
+                spaceId: activeSpaceId,
+                pinnedId: target.id,
+              })
               await ctx.refresh()
             } catch (e) {
               ctx.onError(e)
