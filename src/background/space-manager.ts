@@ -3,6 +3,7 @@ import {
   type FolderId,
   type ItemRef,
   type LiveSource,
+  type PinnedUrl,
   type Space,
   type SpaceColor,
   type SpaceId,
@@ -900,6 +901,92 @@ export async function validateLiveTabIds(): Promise<void> {
       }
     }
     for (const id of dead) delete s.tabs[id]
+  })
+}
+
+// ---- Pinned URL management ----------------------------------------------
+
+// Strip the fragment and a single trailing slash from the path so URLs
+// that differ only cosmetically (e.g. "/foo" vs "/foo/", "/page" vs
+// "/page#section") collapse into one pin and match the active tab.
+// Falls back to the trimmed input if URL parsing fails (e.g. chrome://
+// URLs that are nonetheless valid for our purposes).
+export function normalizePinUrl(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  try {
+    const u = new URL(trimmed)
+    u.hash = ''
+    if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
+      u.pathname = u.pathname.slice(0, -1)
+    }
+    return u.toString()
+  } catch {
+    return trimmed
+  }
+}
+
+export async function pinUrl(
+  spaceId: SpaceId,
+  input: { url: string; title?: string; favIconUrl?: string },
+): Promise<PinnedUrl> {
+  const url = normalizePinUrl(input.url)
+  if (!url) throw new Error('URL must not be empty')
+
+  let result: PinnedUrl | undefined
+  await updateStore((s) => {
+    const sp = s.spaces[spaceId]
+    if (!sp) throw new Error(`Space not found: ${spaceId}`)
+    const pins = sp.pinnedUrls ?? []
+    const existing = pins.find((p) => p.url === url)
+    if (existing) {
+      result = existing
+      return
+    }
+    const entry: PinnedUrl = {
+      id: uid(),
+      url,
+      title: input.title,
+      favIconUrl: input.favIconUrl,
+      addedAt: now(),
+    }
+    sp.pinnedUrls = [...pins, entry]
+    result = entry
+  })
+  if (!result) throw new Error('pinUrl: result not assigned')
+  return result
+}
+
+export async function unpinUrl(spaceId: SpaceId, pinnedId: string): Promise<void> {
+  await updateStore((s) => {
+    const sp = s.spaces[spaceId]
+    if (!sp) return
+    sp.pinnedUrls = (sp.pinnedUrls ?? []).filter((p) => p.id !== pinnedId)
+  })
+}
+
+export async function reorderPinnedUrls(
+  spaceId: SpaceId,
+  orderedIds: string[],
+): Promise<void> {
+  await updateStore((s) => {
+    const sp = s.spaces[spaceId]
+    if (!sp) return
+    const pins = sp.pinnedUrls ?? []
+    const byId = new Map(pins.map((p) => [p.id, p]))
+    const ordered: PinnedUrl[] = []
+    for (const id of orderedIds) {
+      const p = byId.get(id)
+      if (p) {
+        ordered.push(p)
+        byId.delete(id)
+      }
+    }
+    // Append any entries not mentioned in orderedIds at the end (defensive).
+    for (const remaining of byId.values()) {
+      ordered.push(remaining)
+    }
+    sp.pinnedUrls = ordered
   })
 }
 

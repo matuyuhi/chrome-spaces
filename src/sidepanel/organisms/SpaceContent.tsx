@@ -6,6 +6,7 @@ import { useAppCtx } from '../AppContext'
 import { COLOR_HEX, tokens } from '../theme'
 import { SpaceMenu } from './menus'
 import { FolderView } from './FolderView'
+import { PinnedBar } from './PinnedBar'
 import { IconButton } from '../atoms/IconButton'
 import { ColorDot } from '../atoms/ColorDot'
 import { NameInput } from '../atoms/NameInput'
@@ -148,6 +149,7 @@ export function SpaceContent({ space }: { space: Space }) {
         )}
       </Header>
 
+      <PinnedBar spaceId={space.id} pinnedUrls={space.pinnedUrls} />
       <FolderView folder={root} depth={0} isRoot />
     </Body>
   )

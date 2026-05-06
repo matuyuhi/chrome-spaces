@@ -85,6 +85,14 @@ export interface Folder {
   live?: LiveConfig
 }
 
+export interface PinnedUrl {
+  id: string
+  url: string
+  title?: string
+  favIconUrl?: string
+  addedAt: number
+}
+
 export interface Space {
   id: SpaceId
   name: string
@@ -96,6 +104,7 @@ export interface Space {
   lastActiveTabId?: number
   createdAt: number
   lastAccessedAt: number
+  pinnedUrls?: PinnedUrl[]
 }
 
 export const CURRENT_SCHEMA_VERSION = 3
