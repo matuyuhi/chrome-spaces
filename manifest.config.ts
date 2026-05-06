@@ -6,6 +6,13 @@ export default defineManifest({
   name: 'Spaces',
   version: pkg.version,
   description: 'Arc-like sidebar for Chrome: Spaces, nested folders, GitHub Live folders.',
+  icons: {
+    16: 'img/icon_16.png',
+    32: 'img/icon_32.png',
+    48: 'img/icon_48.png',
+    64: 'img/icon_64.png',
+    128: 'img/icon_128.png',
+  },
   permissions: ['tabs', 'tabGroups', 'storage', 'alarms', 'contextMenus', 'sidePanel'],
   host_permissions: ['https://api.github.com/*', 'https://github.com/login/*'],
   // GHES base URLs are entered at runtime; we ask for the specific origin
@@ -18,8 +25,17 @@ export default defineManifest({
   side_panel: {
     default_path: 'src/sidepanel/index.html',
   },
+  options_ui: {
+    page: 'src/options/index.html',
+    open_in_tab: true,
+  },
   action: {
     default_title: 'Spaces',
+    default_icon: {
+      16: 'img/icon_16.png',
+      32: 'img/icon_32.png',
+      48: 'img/icon_48.png',
+    },
   },
   commands: {
     'switch-space-1': { description: 'Switch to Space 1' },
