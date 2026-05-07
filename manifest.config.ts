@@ -5,7 +5,7 @@ export default defineManifest({
   manifest_version: 3,
   name: 'Spaces',
   version: pkg.version,
-  description: 'Arc-like sidebar for Chrome: Spaces, nested folders, GitHub Live folders.',
+  description: 'Group your tabs into per-window Spaces with nested folders and live GitHub-search folders, all from Chrome\'s side panel.',
   icons: {
     16: 'img/icon_16.png',
     32: 'img/icon_32.png',
