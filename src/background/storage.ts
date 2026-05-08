@@ -3,6 +3,7 @@ import {
   type Space,
   type SpaceColor,
   type SpaceStore,
+  type LiveSource,
   CURRENT_SCHEMA_VERSION,
   emptyStore,
 } from '../shared/types'
@@ -206,8 +207,7 @@ async function migrateV1ToV2(old: V1Store): Promise<SpaceStore> {
           tabId: m.tabId,
         })),
         live: {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          source: oldSpace.source as any,
+          source: oldSpace.source as LiveSource,
           refreshIntervalMin: oldSpace.refreshIntervalMin ?? 0,
           managedTabs: oldSpace.managedTabs ?? [],
           starterTabId: oldSpace.starterTabId,
