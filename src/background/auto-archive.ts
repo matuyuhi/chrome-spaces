@@ -121,9 +121,6 @@ export async function archiveStaleTabs(): Promise<ArchiveResult> {
       archived.push({ spaceId: c.spaceId, folderId: archiveId, tabId: c.tabId })
     }
   })
-  if (archived.length > 0) {
-    console.log(`[Spaces] auto-archived ${archived.length} tabs`)
-  }
   return { archived }
 }
 

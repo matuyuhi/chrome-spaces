@@ -80,13 +80,11 @@ async function bootstrap(): Promise<void> {
   await installContextMenus()
 }
 
-chrome.runtime.onInstalled.addListener((details) => {
-  console.log('[Spaces] installed', details.reason)
+chrome.runtime.onInstalled.addListener(() => {
   void bootstrap()
 })
 
 chrome.runtime.onStartup.addListener(() => {
-  console.log('[Spaces] startup')
   void bootstrap()
 })
 
