@@ -1,17 +1,12 @@
 import styled from '@emotion/styled'
-import { useCallback, useEffect, useState } from 'react'
-import {
-  DEFAULT_UI_PREFS,
-  sendMessage,
-  type UIPreferences,
-} from '../shared/messaging'
-import {
-  type FolderId,
-  type SpaceStore,
-} from '../shared/types'
+import { useEffect, useMemo, useState } from 'react'
+import { sendMessage } from '../shared/messaging'
+import { type FolderId } from '../shared/types'
 import { AppCtxProvider, type AppCtx } from './AppContext'
-import { type DragState, type DropPos, type TabInfo } from './dnd'
 import { COLORS, applyFontSize } from './theme'
+import { useDragDropController } from './hooks/useDragDropController'
+import { useMenuController } from './hooks/useMenuController'
+import { useStoreData } from './hooks/useStoreData'
 import { PanelHeader } from './organisms/Header'
 import { ErrorBanner } from './organisms/ErrorBanner'
 import { OrphanBanner } from './organisms/OrphanBanner'
@@ -50,125 +45,25 @@ const Loading = styled.div`
 `
 
 export function App() {
-  const [windowId, setWindowId] = useState<number | undefined>()
-  const [store, setStore] = useState<SpaceStore | undefined>()
-  const [tabs, setTabs] = useState<Record<number, TabInfo>>({})
-  const [error, setError] = useState<string | undefined>()
-  const [tabGroupCount, setTabGroupCount] = useState(0)
+  const data = useStoreData()
+  const {
+    windowId,
+    store,
+    tabs,
+    prefs,
+    tabGroupCount,
+    error,
+    refresh,
+    refreshPrefs,
+    onError,
+    clearError,
+  } = data
+
+  const menu = useMenuController()
+  const dnd = useDragDropController({ windowId, refresh, onError })
+
   const [view, setView] = useState<View>({ kind: 'list' })
-  const [openMenu, setOpenMenu] = useState<string | undefined>()
-  const [drag, setDrag] = useState<DragState | undefined>()
-  const [dropPos, setDropPos] = useState<DropPos | undefined>()
   const [commandBarOpen, setCommandBarOpen] = useState(false)
-  const [prefs, setPrefs] = useState<UIPreferences>(DEFAULT_UI_PREFS)
-
-  const refreshPrefs = useCallback(async () => {
-    const next = await sendMessage({ type: 'getUIPrefs' })
-    applyFontSize(next.fontSize)
-    setPrefs(next)
-  }, [])
-
-  const refresh = useCallback(async () => {
-    try {
-      const win = await chrome.windows.getCurrent()
-      if (typeof win.id !== 'number') return
-      setWindowId(win.id)
-      const next = await sendMessage({ type: 'getStore' })
-      setStore(next)
-      const winTabs = await chrome.tabs.query({ windowId: win.id })
-      const map: Record<number, TabInfo> = {}
-      for (const t of winTabs) {
-        if (typeof t.id !== 'number') continue
-        map[t.id] = {
-          id: t.id,
-          title: t.title ?? '',
-          url: t.url ?? '',
-          favIconUrl: t.favIconUrl,
-          hidden: (t as { hidden?: boolean }).hidden ?? false,
-          active: t.active ?? false,
-        }
-      }
-      setTabs(map)
-      try {
-        const groups = await chrome.tabGroups.query({ windowId: win.id })
-        setTabGroupCount(groups.length)
-      } catch {
-        setTabGroupCount(0)
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }, [])
-
-  const finalizeDrop = useCallback(async () => {
-    if (!drag || !dropPos || windowId === undefined) {
-      setDrag(undefined)
-      setDropPos(undefined)
-      return
-    }
-    const dragSnap = drag
-    const target = dropPos
-    setDrag(undefined)
-    setDropPos(undefined)
-
-    try {
-      if (dragSnap.kind === 'space' && target.kind === 'reorder-space') {
-        const ordered = (await sendMessage({ type: 'getStore' })).spaces
-        const inWindow = Object.values(ordered)
-          .filter((sp) => sp.windowId === windowId)
-          .sort((a, b) => a.order - b.order)
-        const sourceIdx = inWindow.findIndex((sp) => sp.id === dragSnap.spaceId)
-        const targetIdx = inWindow.findIndex(
-          (sp) => sp.id === target.targetSpaceId,
-        )
-        if (sourceIdx === -1 || targetIdx === -1) return
-        let insertAt = targetIdx + (target.position === 'after' ? 1 : 0)
-        if (sourceIdx < insertAt) insertAt -= 1
-        if (insertAt === sourceIdx) return
-        const next = [...inWindow]
-        const [moved] = next.splice(sourceIdx, 1)
-        if (!moved) return
-        next.splice(insertAt, 0, moved)
-        await sendMessage({
-          type: 'reorderSpaces',
-          windowId,
-          orderedIds: next.map((sp) => sp.id),
-        })
-        await refresh()
-        return
-      }
-      if (dragSnap.kind === 'item') {
-        let toFolderId: FolderId
-        let toIndex: number
-        switch (target.kind) {
-          case 'before-item':
-            toFolderId = target.folderId
-            toIndex = target.index
-            break
-          case 'after-item':
-            toFolderId = target.folderId
-            toIndex = target.index + 1
-            break
-          case 'into-folder':
-          case 'into-space':
-            toFolderId = target.folderId
-            toIndex = Number.MAX_SAFE_INTEGER
-            break
-          case 'reorder-space':
-            return
-        }
-        await sendMessage({
-          type: 'moveItem',
-          item: dragSnap.item,
-          toFolderId,
-          toIndex,
-        })
-        await refresh()
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }, [drag, dropPos, windowId, refresh])
 
   useEffect(() => {
     void refresh()
@@ -197,7 +92,6 @@ export function App() {
   useEffect(() => {
     void sendMessage({ type: 'getUIPrefs' }).then((next) => {
       applyFontSize(next.fontSize)
-      setPrefs(next)
     })
   }, [])
 
@@ -303,24 +197,46 @@ export function App() {
     return () => chrome.runtime.onMessage.removeListener(listener)
   }, [windowId])
 
-  useEffect(() => {
-    if (!openMenu) return
-    const onDocClick = (e: MouseEvent) => {
-      const target = e.target as Element | null
-      if (target?.closest('[role="menu"]')) return
-      setOpenMenu(undefined)
-    }
-    const t = window.setTimeout(
-      () => document.addEventListener('click', onDocClick),
-      0,
-    )
-    return () => {
-      window.clearTimeout(t)
-      document.removeEventListener('click', onDocClick)
-    }
-  }, [openMenu])
+  const { openMenu, setOpenMenu } = menu
+  const { drag, setDrag, dropPos, setDropPos, finalizeDrop } = dnd
 
-  if (!store || windowId === undefined) {
+  const ctxValue = useMemo<AppCtx | undefined>(() => {
+    if (!store || windowId === undefined) return undefined
+    return {
+      store,
+      windowId,
+      tabs,
+      prefs,
+      refresh,
+      onError,
+      openMenu,
+      setOpenMenu,
+      drag,
+      setDrag,
+      dropPos,
+      setDropPos,
+      finalizeDrop,
+      onCreateLive: (parentFolderId) =>
+        setView({ kind: 'live-create', parentFolderId }),
+      onEditLive: (folderId) => setView({ kind: 'live-edit', folderId }),
+    }
+  }, [
+    store,
+    windowId,
+    tabs,
+    prefs,
+    refresh,
+    onError,
+    openMenu,
+    setOpenMenu,
+    drag,
+    setDrag,
+    dropPos,
+    setDropPos,
+    finalizeDrop,
+  ])
+
+  if (!store || windowId === undefined || !ctxValue) {
     return (
       <>
         <GlobalStyles />
@@ -328,9 +244,6 @@ export function App() {
       </>
     )
   }
-
-  const handleError = (e: unknown) =>
-    setError(e instanceof Error ? e.message : String(e))
 
   if (view.kind === 'live-create') {
     return (
@@ -361,7 +274,7 @@ export function App() {
                     console.error('[Spaces] post-create sync', err),
                   )
               } catch (e) {
-                handleError(e)
+                onError(e)
               }
             }}
           />
@@ -404,7 +317,7 @@ export function App() {
                     console.error('[Spaces] post-edit sync', err),
                   )
               } catch (e) {
-                handleError(e)
+                onError(e)
               }
             }}
           />
@@ -437,25 +350,6 @@ export function App() {
     if (!claimedTabIds.has(id)) orphanTabIds.push(id)
   }
 
-  const ctxValue: AppCtx = {
-    store,
-    windowId,
-    tabs,
-    prefs,
-    refresh,
-    onError: handleError,
-    openMenu,
-    setOpenMenu,
-    drag,
-    setDrag,
-    dropPos,
-    setDropPos,
-    finalizeDrop,
-    onCreateLive: (parentFolderId) =>
-      setView({ kind: 'live-create', parentFolderId }),
-    onEditLive: (folderId) => setView({ kind: 'live-edit', folderId }),
-  }
-
   return (
     <AppCtxProvider value={ctxValue}>
       <GlobalStyles />
@@ -467,7 +361,7 @@ export function App() {
               await sendMessage({ type: 'importChromeTabGroups', windowId })
               await refresh()
             } catch (e) {
-              handleError(e)
+              onError(e)
             }
           }}
           onNewSpace={async () => {
@@ -482,7 +376,7 @@ export function App() {
               })
               await refresh()
             } catch (e) {
-              handleError(e)
+              onError(e)
             }
           }}
           onOpenSettings={() => chrome.runtime.openOptionsPage()}
@@ -492,7 +386,7 @@ export function App() {
           <ErrorBanner
             message={error}
             onDismiss={() => {
-              setError(undefined)
+              clearError()
               void refresh()
             }}
           />
@@ -511,7 +405,7 @@ export function App() {
               })
               await refresh()
             } catch (e) {
-              handleError(e)
+              onError(e)
             }
           }}
           onCreateNewSpace={async () => {
@@ -527,7 +421,7 @@ export function App() {
               })
               await refresh()
             } catch (e) {
-              handleError(e)
+              onError(e)
             }
           }}
         />
