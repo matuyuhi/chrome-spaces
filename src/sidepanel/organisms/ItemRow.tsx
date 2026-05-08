@@ -1,28 +1,12 @@
 import { sendMessage } from '../../shared/messaging'
 import { type FolderId, type ItemRef, type ManagedTab } from '../../shared/types'
 import { useAppCtx } from '../AppContext'
+import { normalizeUrlForMatching } from "../utils/url"
+import { detectInsertPosition } from "../utils/dnd"
 import { type DropPos, dropPosKey } from '../dnd'
 import { TabMenu } from './menus'
 import { FolderView } from './FolderView'
 import { Minus, X } from '../atoms/icons'
-
-// Same normalization as the bg side / PinnedBar: trim, drop fragment,
-// drop a trailing slash on non-root paths. Inlined here too so the
-// "pin hides matching tab row" filter stays consistent.
-function normalizeForPinMatch(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return ''
-  try {
-    const u = new URL(trimmed)
-    u.hash = ''
-    if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
-      u.pathname = u.pathname.slice(0, -1)
-    }
-    return u.toString()
-  } catch {
-    return trimmed
-  }
-}
 import {
   CloseButton,
   Favicon,
@@ -86,7 +70,7 @@ export function ItemRow({
   const isInPinBar =
     !!tabUrl &&
     !!activeSpace?.pinnedUrls?.some(
-      (p) => normalizeForPinMatch(p.url) === normalizeForPinMatch(tabUrl),
+      (p) => normalizeUrlForMatching(p.url) === normalizeUrlForMatching(tabUrl),
     )
   const canAddToPinBar = !parentIsLive && !!activeSpaceId && !!tabUrl
 
@@ -137,11 +121,11 @@ export function ItemRow({
           ? (e) => {
               e.preventDefault()
               e.dataTransfer.dropEffect = 'move'
-              const rect = e.currentTarget.getBoundingClientRect()
-              const above = e.clientY - rect.top < rect.height / 2
-              const next: DropPos = above
-                ? { kind: 'before-item', folderId: parentFolderId, index: indexInParent }
-                : { kind: 'after-item', folderId: parentFolderId, index: indexInParent }
+              const position = detectInsertPosition(e, 'vertical')
+              const next: DropPos =
+                position === 'before'
+                  ? { kind: 'before-item', folderId: parentFolderId, index: indexInParent }
+                  : { kind: 'after-item', folderId: parentFolderId, index: indexInParent }
               if (!ctx.dropPos || dropPosKey(ctx.dropPos) !== dropPosKey(next)) {
                 ctx.setDropPos(next)
               }

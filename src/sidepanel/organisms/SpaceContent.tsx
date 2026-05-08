@@ -1,8 +1,8 @@
 import styled from '@emotion/styled'
-import { useState } from 'react'
 import { sendMessage } from '../../shared/messaging'
 import { type Space } from '../../shared/types'
 import { useAppCtx } from '../AppContext'
+import { useEditMode } from '../hooks/useEditMode'
 import { COLOR_HEX, tokens } from '../theme'
 import { SpaceMenu } from './menus'
 import { FolderView } from './FolderView'
@@ -41,8 +41,7 @@ export function SpaceContent({ space }: { space: Space }) {
   const ctx = useAppCtx()
   const root = ctx.store.folders[space.rootFolderId]
   const menuId = `space:${space.id}`
-  const [editingName, setEditingName] = useState(false)
-  const [draftName, setDraftName] = useState(space.name)
+  const edit = useEditMode(space.name)
 
   if (!root) return <p>(missing root folder)</p>
 
@@ -64,19 +63,19 @@ export function SpaceContent({ space }: { space: Space }) {
     >
       <Header>
         <ColorDot color={COLOR_HEX[space.color]} size={4} />
-        {editingName ? (
+        {edit.isEditing ? (
           <NameInput
             autoFocus
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
+            value={edit.draft}
+            onChange={(e) => edit.setDraft(e.target.value)}
             onBlur={async () => {
-              setEditingName(false)
-              if (draftName.trim() && draftName !== space.name) {
+              edit.stop()
+              if (edit.draft.trim() && edit.draft !== space.name) {
                 try {
                   await sendMessage({
                     type: 'renameSpace',
                     spaceId: space.id,
-                    name: draftName.trim(),
+                    name: edit.draft.trim(),
                   })
                   await ctx.refresh()
                 } catch (e) {
@@ -84,13 +83,7 @@ export function SpaceContent({ space }: { space: Space }) {
                 }
               }
             }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-              if (e.key === 'Escape') {
-                setDraftName(space.name)
-                setEditingName(false)
-              }
-            }}
+            onKeyDown={edit.handleKeyDown}
           />
         ) : (
           <Name>
@@ -112,8 +105,7 @@ export function SpaceContent({ space }: { space: Space }) {
             space={space}
             onClose={() => ctx.setOpenMenu(undefined)}
             onRename={() => {
-              setDraftName(space.name)
-              setEditingName(true)
+              edit.start()
               ctx.setOpenMenu(undefined)
             }}
             onColor={async (color) => {
