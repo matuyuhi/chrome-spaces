@@ -2,27 +2,10 @@ import { sendMessage } from '../../shared/messaging'
 import { type FolderId, type ItemRef, type ManagedTab } from '../../shared/types'
 import { useAppCtx } from '../AppContext'
 import { type DropPos, dropPosKey } from '../dnd'
+import { normalizeUrlForMatching } from '../utils/url'
 import { TabMenu } from './menus'
 import { FolderView } from './FolderView'
 import { Minus, X } from '../atoms/icons'
-
-// Same normalization as the bg side / PinnedBar: trim, drop fragment,
-// drop a trailing slash on non-root paths. Inlined here too so the
-// "pin hides matching tab row" filter stays consistent.
-function normalizeForPinMatch(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return ''
-  try {
-    const u = new URL(trimmed)
-    u.hash = ''
-    if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
-      u.pathname = u.pathname.slice(0, -1)
-    }
-    return u.toString()
-  } catch {
-    return trimmed
-  }
-}
 import {
   CloseButton,
   Favicon,
@@ -86,7 +69,7 @@ export function ItemRow({
   const isInPinBar =
     !!tabUrl &&
     !!activeSpace?.pinnedUrls?.some(
-      (p) => normalizeForPinMatch(p.url) === normalizeForPinMatch(tabUrl),
+      (p) => normalizeUrlForMatching(p.url) === normalizeUrlForMatching(tabUrl),
     )
   const canAddToPinBar = !parentIsLive && !!activeSpaceId && !!tabUrl
 
