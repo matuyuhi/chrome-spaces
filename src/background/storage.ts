@@ -89,14 +89,12 @@ export async function migrateIfNeeded(): Promise<void> {
   let current: SpaceStore
   let version = stored.schemaVersion
   if (version === undefined || version === 1) {
-    console.log('[Spaces] migrating store v1 → v2')
     current = await migrateV1ToV2(stored as unknown as V1Store)
     version = 2
   } else {
     current = stored as unknown as SpaceStore
   }
   if (version === 2) {
-    console.log('[Spaces] migrating store v2 → v3')
     current = migrateV2ToV3(current)
     version = 3
   }
