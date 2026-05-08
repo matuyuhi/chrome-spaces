@@ -4,6 +4,7 @@ import { sendMessage } from '../../shared/messaging'
 import { type Space, type SpaceColor } from '../../shared/types'
 import { useAppCtx } from '../AppContext'
 import { type DropPos, dropPosKey } from '../dnd'
+import { detectInsertPosition } from '../utils/dnd'
 import { SpaceTab } from '../molecules/SpaceTab'
 import { SpaceMenu } from './menus'
 
@@ -115,12 +116,10 @@ export function SpaceTabsList({ spaces, active, windowId }: Props) {
                       let next: DropPos
                       if (ctx.drag!.kind === 'space') {
                         if (ctx.drag!.spaceId === sp.id) return
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const before = e.clientX - rect.left < rect.width / 2
                         next = {
                           kind: 'reorder-space',
                           targetSpaceId: sp.id,
-                          position: before ? 'before' : 'after',
+                          position: detectInsertPosition(e, 'horizontal'),
                         }
                       } else {
                         next = {
