@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { archiveStaleTabs } from './auto-archive'
+import { archiveStaleTabs, ensureAutoArchiveAlarm, AUTO_ARCHIVE_ALARM } from './auto-archive'
 import { createFolder, createSpace } from './space-manager'
 import { loadStore, updateStore } from './storage'
 import { setUIPrefs } from './ui-prefs'
@@ -110,5 +110,52 @@ describe('archiveStaleTabs', () => {
 
     const result = await archiveStaleTabs()
     expect(result.archived).toEqual([])
+  })
+})
+
+describe('ensureAutoArchiveAlarm', () => {
+  let chromeMock: ReturnType<typeof setupChromeMock>
+  beforeEach(() => {
+    chromeMock = setupChromeMock()
+  })
+
+  it('clears the alarm if autoArchiveDays is 0', async () => {
+    await setUIPrefs({ autoArchiveDays: 0 })
+    chromeMock.alarms.set(AUTO_ARCHIVE_ALARM, { name: AUTO_ARCHIVE_ALARM, periodInMinutes: 1440 })
+    await ensureAutoArchiveAlarm()
+    expect(chromeMock.alarms.has(AUTO_ARCHIVE_ALARM)).toBe(false)
+  })
+
+  it('clears the alarm if autoArchiveDays is undefined', async () => {
+    await setUIPrefs({ autoArchiveDays: undefined as any })
+    chromeMock.alarms.set(AUTO_ARCHIVE_ALARM, { name: AUTO_ARCHIVE_ALARM, periodInMinutes: 1440 })
+    await ensureAutoArchiveAlarm()
+    expect(chromeMock.alarms.has(AUTO_ARCHIVE_ALARM)).toBe(false)
+  })
+
+  it('creates the alarm if autoArchiveDays > 0 and it does not exist', async () => {
+    await setUIPrefs({ autoArchiveDays: 7 })
+    await ensureAutoArchiveAlarm()
+    const alarm = chromeMock.alarms.get(AUTO_ARCHIVE_ALARM)
+    expect(alarm).toBeDefined()
+    expect(alarm?.periodInMinutes).toBe(1440)
+  })
+
+  it('recreates the alarm if it exists with the wrong period', async () => {
+    await setUIPrefs({ autoArchiveDays: 7 })
+    chromeMock.alarms.set(AUTO_ARCHIVE_ALARM, { name: AUTO_ARCHIVE_ALARM, periodInMinutes: 60 })
+    await ensureAutoArchiveAlarm()
+    const alarm = chromeMock.alarms.get(AUTO_ARCHIVE_ALARM)
+    expect(alarm).toBeDefined()
+    expect(alarm?.periodInMinutes).toBe(1440)
+  })
+
+  it('does nothing if the alarm already exists with the correct period', async () => {
+    await setUIPrefs({ autoArchiveDays: 7 })
+    chromeMock.alarms.set(AUTO_ARCHIVE_ALARM, { name: AUTO_ARCHIVE_ALARM, periodInMinutes: 1440 })
+    const createSpy = (globalThis as any).chrome.alarms.create
+    createSpy.mockClear()
+    await ensureAutoArchiveAlarm()
+    expect(createSpy).not.toHaveBeenCalled()
   })
 })

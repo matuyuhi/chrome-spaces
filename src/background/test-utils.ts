@@ -134,6 +134,7 @@ export function setupChromeMock(): ChromeMock {
     create: vi.fn(async (name: string, info: { periodInMinutes?: number }) => {
       alarmsBacking.set(name, { name, periodInMinutes: info.periodInMinutes })
     }),
+    get: vi.fn(async (name: string) => alarmsBacking.get(name)),
     clear: vi.fn(async (name: string) => alarmsBacking.delete(name)),
     clearAll: vi.fn(async () => {
       const had = alarmsBacking.size > 0
