@@ -78,8 +78,40 @@ export function parseFeed(xml: string, sourceUrl: string): LiveItem[] {
   return items
 }
 
+export function isRestrictedUrl(urlStr: string): boolean {
+  try {
+    const url = new URL(urlStr)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return true
+    const hostname = url.hostname.toLowerCase()
+
+    if (hostname === 'localhost') return true
+
+    // Quick regex to ensure we're matching an actual IPv4 address
+    // format rather than just a domain that starts with "10." like "10.example.com"
+    const isIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)
+
+    if (isIPv4) {
+      if (hostname.startsWith('127.')) return true
+      if (hostname.startsWith('10.')) return true
+      if (hostname.startsWith('192.168.')) return true
+      if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)) return true
+      if (hostname === '169.254.169.254') return true
+    }
+
+    if (hostname === 'metadata.google.internal') return true
+    if (hostname === '::1' || hostname === '[::1]') return true
+
+    return false
+  } catch {
+    return true
+  }
+}
+
 export const rssAdapter: SourceAdapter<Extract<LiveSource, { type: 'rss' }>> = {
   async fetch(source, ctx): Promise<SearchResult> {
+    if (isRestrictedUrl(source.url)) {
+      throw new SourceError(400, 'Restricted URL')
+    }
     const headers: Record<string, string> = {
       Accept: 'application/atom+xml, application/rss+xml, application/xml;q=0.9, */*;q=0.8',
     }

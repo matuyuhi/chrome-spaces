@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { parseFeed, rssAdapter } from './rss'
+import { parseFeed, rssAdapter, isRestrictedUrl } from './rss'
 
 const RSS_FIXTURE = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -66,6 +66,34 @@ describe('parseFeed', () => {
   })
 })
 
+describe('isRestrictedUrl', () => {
+  it('identifies restricted URLs correctly', () => {
+    expect(isRestrictedUrl('http://localhost/feed')).toBe(true)
+    expect(isRestrictedUrl('http://127.0.0.1/feed')).toBe(true)
+    expect(isRestrictedUrl('http://10.0.0.1/feed')).toBe(true)
+    expect(isRestrictedUrl('http://192.168.1.1/feed')).toBe(true)
+    expect(isRestrictedUrl('http://172.16.0.1/feed')).toBe(true)
+    expect(isRestrictedUrl('http://172.31.0.1/feed')).toBe(true)
+    expect(isRestrictedUrl('http://169.254.169.254/latest/meta-data')).toBe(true)
+    expect(isRestrictedUrl('http://metadata.google.internal/computeMetadata/v1/')).toBe(true)
+    expect(isRestrictedUrl('http://[::1]/feed')).toBe(true)
+    expect(isRestrictedUrl('ftp://example.com/feed')).toBe(true)
+    expect(isRestrictedUrl('invalid-url')).toBe(true)
+  })
+
+  it('allows safe external URLs', () => {
+    expect(isRestrictedUrl('https://example.com/feed')).toBe(false)
+    expect(isRestrictedUrl('http://example.org/feed.xml')).toBe(false)
+    // 172 outside private range
+    expect(isRestrictedUrl('http://172.15.0.1/feed')).toBe(false)
+    expect(isRestrictedUrl('http://172.32.0.1/feed')).toBe(false)
+
+    // Test for false positives where domain name starts with restricted numbers
+    expect(isRestrictedUrl('http://10.example.com/feed')).toBe(false)
+    expect(isRestrictedUrl('http://127.example.com/feed')).toBe(false)
+  })
+})
+
 describe('rssAdapter', () => {
   it('fetches and parses a feed, capturing the etag', async () => {
     const fetchSpy = vi.fn(async () =>
@@ -94,5 +122,16 @@ describe('rssAdapter', () => {
     const headers = (fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1]
       .headers as Record<string, string>
     expect(headers['If-None-Match']).toBe('W/"feed-v1"')
+  })
+
+  it('throws a SourceError for restricted URLs', async () => {
+    const fetchSpy = vi.fn()
+    await expect(
+      rssAdapter.fetch(
+        { type: 'rss', url: 'http://localhost/rss' },
+        { fetch: fetchSpy as unknown as typeof fetch },
+      )
+    ).rejects.toThrowError(/Restricted URL/)
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
