@@ -18,6 +18,7 @@ import {
   unpinTab,
   unpinUrl,
   updateLiveFolder,
+  importStore,
 } from './space-manager'
 import { loadStore } from './storage'
 import { setupChromeMock, type ChromeMock } from './test-utils'
@@ -353,5 +354,29 @@ describe('space-manager (v2)', () => {
     expect(pins[0].id).toBe(p3.id)
     expect(pins[1].id).toBe(p1.id)
     expect(pins[2].id).toBe(p2.id)
+  })
+
+  describe('importStore', () => {
+    it('throws when the input is not an object', async () => {
+      // @ts-expect-error Intentionally invalid input
+      await expect(importStore(null, 1)).rejects.toThrow('Invalid import: not an object')
+    })
+
+    it('throws when folders is missing or invalid', async () => {
+      // @ts-expect-error Intentionally invalid input
+      await expect(importStore({}, 1)).rejects.toThrow('Invalid import: missing or invalid folders map')
+    })
+
+    it('throws when spaces is missing or invalid', async () => {
+      // @ts-expect-error Intentionally invalid input
+      await expect(importStore({ folders: {} }, 1)).rejects.toThrow('Invalid import: missing or invalid spaces map')
+    })
+
+    it('throws when schemaVersion mismatches', async () => {
+      await expect(
+        // @ts-expect-error Intentionally invalid schemaVersion
+        importStore({ folders: {}, spaces: {}, schemaVersion: -1 }, 1),
+      ).rejects.toThrow(/Schema version mismatch/)
+    })
   })
 })

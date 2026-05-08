@@ -690,6 +690,15 @@ export async function importStore(
   raw: SpaceStore,
   currentWindowId: number,
 ): Promise<void> {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Invalid import: not an object')
+  }
+  if (!raw.folders || typeof raw.folders !== 'object') {
+    throw new Error('Invalid import: missing or invalid folders map')
+  }
+  if (!raw.spaces || typeof raw.spaces !== 'object') {
+    throw new Error('Invalid import: missing or invalid spaces map')
+  }
   if (raw.schemaVersion !== CURRENT_SCHEMA_VERSION) {
     throw new Error(
       `Schema version mismatch: file is v${raw.schemaVersion}, this build is v${CURRENT_SCHEMA_VERSION}`,
