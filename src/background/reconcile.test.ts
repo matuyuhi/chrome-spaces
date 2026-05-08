@@ -2,13 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { reconcile, reconcileIfStale } from './reconcile'
 import { createSpace, createFolder, registerTab, switchTo } from './space-manager'
 import { loadStore } from './storage'
-import { setupChromeMock, type ChromeMock } from './test-utils'
+import { setupChromeMock } from './test-utils'
 
 describe('reconcile', () => {
-  let mock: ChromeMock
-
   beforeEach(() => {
-    mock = setupChromeMock()
+    setupChromeMock()
   })
 
   afterEach(() => {
@@ -16,7 +14,7 @@ describe('reconcile', () => {
   })
 
   it('does nothing when no tabs are missing', async () => {
-    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    await createSpace({ name: 'S', color: 'blue', windowId: 1 })
     const t1 = await chrome.tabs.create({ windowId: 1 })
     const t2 = await chrome.tabs.create({ windowId: 1 })
     await registerTab(t1)
@@ -70,7 +68,7 @@ describe('reconcile', () => {
       vi.useFakeTimers()
       vi.setSystemTime(1000000000)
 
-      const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+      await createSpace({ name: 'S', color: 'blue', windowId: 1 })
       const t1 = await chrome.tabs.create({ windowId: 1 })
       await registerTab(t1)
       await chrome.tabs.remove(t1.id!)
