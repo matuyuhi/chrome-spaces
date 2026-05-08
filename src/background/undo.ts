@@ -562,21 +562,24 @@ async function undoDeleteFolder(
 ): Promise<boolean> {
   // Re-open closed tabs first so we have the new tabIds before writing store.
   const newTabIds = new Map<string, number>() // key: `${folderId}:${index}`
-  for (const ct of action.snapshot.closedTabs) {
-    if (!ct.url) continue
-    try {
-      const created = await chrome.tabs.create({
-        url: ct.url,
-        windowId,
-        active: false,
-      })
-      if (typeof created.id === 'number') {
-        newTabIds.set(`${ct.parentFolderId}:${ct.index}`, created.id)
+
+  await Promise.all(
+    action.snapshot.closedTabs.map(async (ct) => {
+      if (!ct.url) return
+      try {
+        const created = await chrome.tabs.create({
+          url: ct.url,
+          windowId,
+          active: false,
+        })
+        if (typeof created.id === 'number') {
+          newTabIds.set(`${ct.parentFolderId}:${ct.index}`, created.id)
+        }
+      } catch {
+        /* best effort */
       }
-    } catch {
-      /* best effort */
-    }
-  }
+    })
+  )
 
   // Yield for registerTab races.
   if (newTabIds.size > 0) await new Promise<void>((r) => setTimeout(r, 0))
@@ -643,21 +646,24 @@ async function undoDeleteSpace(
 ): Promise<boolean> {
   // Re-open closed tabs first.
   const newTabIds = new Map<string, number>() // key: `${folderId}:${index}`
-  for (const ct of action.snapshot.closedTabs) {
-    if (!ct.url) continue
-    try {
-      const created = await chrome.tabs.create({
-        url: ct.url,
-        windowId,
-        active: false,
-      })
-      if (typeof created.id === 'number') {
-        newTabIds.set(`${ct.parentFolderId}:${ct.index}`, created.id)
+
+  await Promise.all(
+    action.snapshot.closedTabs.map(async (ct) => {
+      if (!ct.url) return
+      try {
+        const created = await chrome.tabs.create({
+          url: ct.url,
+          windowId,
+          active: false,
+        })
+        if (typeof created.id === 'number') {
+          newTabIds.set(`${ct.parentFolderId}:${ct.index}`, created.id)
+        }
+      } catch {
+        /* best effort */
       }
-    } catch {
-      /* best effort */
-    }
-  }
+    })
+  )
 
   if (newTabIds.size > 0) await new Promise<void>((r) => setTimeout(r, 0))
 
