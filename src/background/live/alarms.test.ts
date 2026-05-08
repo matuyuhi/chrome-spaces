@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { reconcileAlarms, alarmName } from './alarms'
+import { type FolderId } from '../../shared/types'
 import { createSpace, createFolder } from '../space-manager'
-import { setupChromeMock, type ChromeMock } from '../test-utils'
+import { setupChromeMock } from '../test-utils'
 
 describe('reconcileAlarms', () => {
-  let mock: ChromeMock
-
   beforeEach(() => {
-    mock = setupChromeMock()
+    setupChromeMock()
   })
 
   it('creates alarms for live folders with refreshIntervalMin >= 1', async () => {
@@ -55,7 +54,7 @@ describe('reconcileAlarms', () => {
   })
 
   it('clears alarms for folders that no longer exist', async () => {
-    const oldAlarmName = alarmName('nonexistent-folder-id' as any)
+    const oldAlarmName = alarmName('nonexistent-folder-id' as FolderId)
     await chrome.alarms.create(oldAlarmName, { periodInMinutes: 10 })
 
     const space = await createSpace({ name: 'Work', color: 'red', windowId: 1 })
