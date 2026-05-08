@@ -1,6 +1,16 @@
 import styled from '@emotion/styled'
 import { useState, type FormEvent } from 'react'
 import { type LiveSource } from '../../shared/types'
+import {
+  ISSUE_PRESETS,
+  OTHER_PRESETS,
+  PR_PRESETS,
+  defaultCustomQueryFor,
+  placeholderQueryFor,
+  presetToSource,
+  sourceToPreset,
+  type FlatPreset,
+} from '../utils/liveFolderPreset'
 import { Field } from '../atoms/Field'
 import { LinkButton, PrimaryButton, SecondaryButton } from '../atoms/Button'
 
@@ -28,94 +38,6 @@ const Actions = styled.div`
   gap: 6px;
   margin-top: 4px;
 `
-
-type FlatPreset =
-  | 'pr-review-requested'
-  | 'pr-assigned'
-  | 'pr-authored'
-  | 'pr-custom'
-  | 'issue-assigned'
-  | 'issue-authored'
-  | 'issue-mentioned'
-  | 'issue-custom'
-  | 'rss'
-
-const PR_PRESETS: { value: FlatPreset; label: string }[] = [
-  { value: 'pr-review-requested', label: 'Review requested' },
-  { value: 'pr-assigned', label: 'Assigned to me' },
-  { value: 'pr-authored', label: 'Authored by me' },
-  { value: 'pr-custom', label: 'Custom search query' },
-]
-
-const ISSUE_PRESETS: { value: FlatPreset; label: string }[] = [
-  { value: 'issue-assigned', label: 'Assigned to me' },
-  { value: 'issue-authored', label: 'Authored by me' },
-  { value: 'issue-mentioned', label: 'Mentioning me' },
-  { value: 'issue-custom', label: 'Custom search query' },
-]
-
-const OTHER_PRESETS: { value: FlatPreset; label: string }[] = [
-  { value: 'rss', label: 'RSS / Atom feed' },
-]
-
-function presetToSource(
-  preset: FlatPreset,
-  user: string,
-  customQuery: string,
-  repoFilter: string,
-  rssUrl: string,
-): LiveSource | undefined {
-  const filter = repoFilter.trim() || undefined
-  switch (preset) {
-    case 'pr-review-requested':
-    case 'pr-assigned':
-    case 'pr-authored':
-      return {
-        type: 'github-prs',
-        preset: preset.slice(3) as 'review-requested' | 'assigned' | 'authored',
-        user: user.trim() || undefined,
-        repoFilter: filter,
-      }
-    case 'pr-custom':
-      return customQuery.trim()
-        ? { type: 'github-prs', preset: 'custom', query: customQuery.trim() }
-        : undefined
-    case 'issue-assigned':
-    case 'issue-authored':
-    case 'issue-mentioned':
-      return {
-        type: 'github-issues',
-        preset: preset.slice(6) as 'assigned' | 'authored' | 'mentioned',
-        user: user.trim() || undefined,
-        repoFilter: filter,
-      }
-    case 'issue-custom':
-      return customQuery.trim()
-        ? { type: 'github-issues', preset: 'custom', query: customQuery.trim() }
-        : undefined
-    case 'rss':
-      return rssUrl.trim() ? { type: 'rss', url: rssUrl.trim() } : undefined
-  }
-}
-
-function sourceToPreset(source: LiveSource | undefined): FlatPreset {
-  if (!source) return 'pr-review-requested'
-  if (source.type === 'rss') return 'rss'
-  if (source.type === 'github-prs') {
-    return source.preset === 'custom' ? 'pr-custom' : (`pr-${source.preset}` as FlatPreset)
-  }
-  return source.preset === 'custom' ? 'issue-custom' : (`issue-${source.preset}` as FlatPreset)
-}
-
-function defaultCustomQueryFor(preset: FlatPreset): string {
-  return preset === 'issue-custom' ? 'is:issue is:open ' : 'is:pr is:open '
-}
-
-function placeholderQueryFor(preset: FlatPreset): string {
-  return preset === 'issue-custom'
-    ? 'is:issue is:open label:bug org:foo'
-    : 'is:pr is:open org:foo'
-}
 
 export interface LiveFolderFormResult {
   name: string
@@ -161,7 +83,7 @@ export function LiveFolderForm({ mode, initial, onSubmit, onCancel }: Props) {
     e.preventDefault()
     if (!name.trim() || submitting) return
     setPermError(undefined)
-    const source = presetToSource(preset, user, customQuery, repoFilter, rssUrl)
+    const source = presetToSource(preset, { user, customQuery, repoFilter, rssUrl })
     if (!source) return
     if (source.type === 'rss') {
       let origin: string
