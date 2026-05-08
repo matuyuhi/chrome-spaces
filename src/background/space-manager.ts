@@ -894,13 +894,15 @@ export async function validateLiveTabIds(): Promise<void> {
   }
   if (candidates.length === 0) return
   const dead = new Set<number>()
-  for (const id of candidates) {
-    try {
-      await chrome.tabs.get(id)
-    } catch {
-      dead.add(id)
-    }
-  }
+  await Promise.all(
+    candidates.map(async (id) => {
+      try {
+        await chrome.tabs.get(id)
+      } catch {
+        dead.add(id)
+      }
+    })
+  )
   if (dead.size === 0) return
   await updateStore((s) => {
     for (const f of Object.values(s.folders)) {
