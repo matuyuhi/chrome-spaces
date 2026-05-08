@@ -2,6 +2,7 @@ import { sendMessage } from '../../shared/messaging'
 import { type FolderId, type ItemRef, type ManagedTab } from '../../shared/types'
 import { useAppCtx } from '../AppContext'
 import { type DropPos, dropPosKey } from '../dnd'
+import { detectInsertPosition } from '../utils/dnd'
 import { TabMenu } from './menus'
 import { FolderView } from './FolderView'
 import { Minus, X } from '../atoms/icons'
@@ -137,11 +138,11 @@ export function ItemRow({
           ? (e) => {
               e.preventDefault()
               e.dataTransfer.dropEffect = 'move'
-              const rect = e.currentTarget.getBoundingClientRect()
-              const above = e.clientY - rect.top < rect.height / 2
-              const next: DropPos = above
-                ? { kind: 'before-item', folderId: parentFolderId, index: indexInParent }
-                : { kind: 'after-item', folderId: parentFolderId, index: indexInParent }
+              const position = detectInsertPosition(e, 'vertical')
+              const next: DropPos =
+                position === 'before'
+                  ? { kind: 'before-item', folderId: parentFolderId, index: indexInParent }
+                  : { kind: 'after-item', folderId: parentFolderId, index: indexInParent }
               if (!ctx.dropPos || dropPosKey(ctx.dropPos) !== dropPosKey(next)) {
                 ctx.setDropPos(next)
               }
