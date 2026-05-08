@@ -4,26 +4,9 @@ import { sendMessage } from '../../shared/messaging'
 import { type PinnedUrl, type SpaceId } from '../../shared/types'
 import { useAppCtx } from '../AppContext'
 import { tokens } from '../theme'
+import { normalizeUrlForMatching } from '../utils/url'
 import { PinnedBlock } from '../atoms/PinnedBlock'
 import { MenuBox, MenuItem } from '../atoms/Menu'
-
-// Match the bg-side normalization (strip fragment + a single trailing
-// slash on the path) so "/foo" and "/foo/" collapse, and so the active
-// tab indicator highlights when the user is currently on a pinned URL.
-function normalizeUrl(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return ''
-  try {
-    const u = new URL(trimmed)
-    u.hash = ''
-    if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
-      u.pathname = u.pathname.slice(0, -1)
-    }
-    return u.toString()
-  } catch {
-    return trimmed
-  }
-}
 
 // ---- styles ---------------------------------------------------------------
 
@@ -105,7 +88,7 @@ export function PinnedBar({
     const set = new Set<string>()
     for (const t of Object.values(ctx.tabs)) {
       if (t.hidden) continue
-      if (t.url) set.add(normalizeUrl(t.url))
+      if (t.url) set.add(normalizeUrlForMatching(t.url))
     }
     return set
   }, [ctx.tabs])
@@ -117,9 +100,9 @@ export function PinnedBar({
   const handleClickPin = async (pin: PinnedUrl) => {
     // 1. Try to find an existing tab with a normalized-URL match. Falls
     //    back through trailing slash / fragment differences.
-    const target = normalizeUrl(pin.url)
+    const target = normalizeUrlForMatching(pin.url)
     const existingTab = Object.values(ctx.tabs).find(
-      (t) => t.url && normalizeUrl(t.url) === target,
+      (t) => t.url && normalizeUrlForMatching(t.url) === target,
     )
     if (existingTab) {
       try {
@@ -149,9 +132,9 @@ export function PinnedBar({
       // user clicked the pin earlier). Skip the recreate in that case
       // to avoid duplicates. registerTab will append the new tab to
       // the active Space's root folder.
-      const target = normalizeUrl(pin.url)
+      const target = normalizeUrlForMatching(pin.url)
       const existingTab = Object.values(ctx.tabs).find(
-        (t) => !t.hidden && t.url && normalizeUrl(t.url) === target,
+        (t) => !t.hidden && t.url && normalizeUrlForMatching(t.url) === target,
       )
       if (!existingTab) {
         await chrome.tabs.create({
@@ -171,7 +154,7 @@ export function PinnedBar({
     <Bar>
       {pins.map((pin) => {
         const menuId = `pinned:${pin.id}`
-        const isActive = openUrlSet.has(normalizeUrl(pin.url))
+        const isActive = openUrlSet.has(normalizeUrlForMatching(pin.url))
         return (
           <BlockWrap key={pin.id}>
             <PinnedBlock
