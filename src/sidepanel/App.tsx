@@ -1,12 +1,17 @@
 import styled from '@emotion/styled'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { sendMessage } from '../shared/messaging'
 import { type FolderId } from '../shared/types'
 import { AppCtxProvider, type AppCtx } from './AppContext'
-import { COLORS, applyFontSize } from './theme'
+import { COLORS } from './theme'
+import { useBackgroundMessages } from './hooks/useBackgroundMessages'
 import { useDragDropController } from './hooks/useDragDropController'
+import { useHorizontalSwipeSwitcher } from './hooks/useHorizontalSwipeSwitcher'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useMenuController } from './hooks/useMenuController'
+import { useReconcileSweep } from './hooks/useReconcileSweep'
 import { useStoreData } from './hooks/useStoreData'
+import { useTabEventListeners } from './hooks/useTabEventListeners'
 import { PanelHeader } from './organisms/Header'
 import { ErrorBanner } from './organisms/ErrorBanner'
 import { OrphanBanner } from './organisms/OrphanBanner'
@@ -64,138 +69,22 @@ export function App() {
 
   const [view, setView] = useState<View>({ kind: 'list' })
   const [commandBarOpen, setCommandBarOpen] = useState(false)
+  const openCommandBar = useCallback(() => setCommandBarOpen(true), [])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  // Throttled reconcile in the SW (30s). Triggered on mount and whenever
-  // the panel regains visibility, since MV3 SWs can miss tab-close events
-  // while suspended and leave zombie tab refs in the store. Also refresh
-  // UI prefs on visibility — the options tab is a separate document and
-  // any change there only reaches us once the user returns.
-  useEffect(() => {
-    const sweep = () => {
-      void sendMessage({ type: 'reconcile' }).then((res) => {
-        if (res.dropped > 0) void refresh()
-      })
-      void refreshPrefs()
-    }
-    sweep()
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') sweep()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [refresh, refreshPrefs])
-
-  useEffect(() => {
-    void sendMessage({ type: 'getUIPrefs' }).then((next) => {
-      applyFontSize(next.fontSize)
-    })
-  }, [])
-
-  useEffect(() => {
-    const listener = () => void refresh()
-    chrome.tabs.onCreated.addListener(listener)
-    chrome.tabs.onRemoved.addListener(listener)
-    chrome.tabs.onUpdated.addListener(listener)
-    chrome.tabs.onActivated.addListener(listener)
-    chrome.tabs.onMoved.addListener(listener)
-    return () => {
-      chrome.tabs.onCreated.removeListener(listener)
-      chrome.tabs.onRemoved.removeListener(listener)
-      chrome.tabs.onUpdated.removeListener(listener)
-      chrome.tabs.onActivated.removeListener(listener)
-      chrome.tabs.onMoved.removeListener(listener)
-    }
-  }, [refresh])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName
-      const inEditor = tag === 'INPUT' || tag === 'TEXTAREA'
-      const mod = e.metaKey || e.ctrlKey
-      if (mod && e.key.toLowerCase() === 'k') {
-        if (inEditor) return
-        e.preventDefault()
-        setCommandBarOpen(true)
-        return
-      }
-      // ⌘Z / Ctrl+Z undoes the last destructive op (close-tab,
-      // delete-folder, delete-space, move-item) for this window.
-      // Skip when typing — native input undo wins there.
-      if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') {
-        if (inEditor) return
-        if (windowId === undefined) return
-        e.preventDefault()
-        void sendMessage({ type: 'undo', windowId }).then((res) => {
-          if (res.ok) void refresh()
-        })
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [windowId, refresh])
-
-  // Horizontal swipe (2-finger trackpad or horizontal wheel) to switch spaces.
-  // Only active when the main list view is visible.
-  useEffect(() => {
-    if (view.kind !== 'list') return
-    if (!store || windowId === undefined) return
-
-    let lastFiredAt = 0
-
-    const onWheel = (e: WheelEvent) => {
-      // Ignore vertical scrolls — only act when horizontal movement dominates.
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
-      // Minimum threshold to avoid tiny accidental drifts.
-      if (Math.abs(e.deltaX) <= 40) return
-      // Ignore when the user is typing in an input.
-      if ((e.target as Element | null)?.closest('input, textarea')) return
-      // Throttle: one switch per 400 ms (absorbs trackpad inertia).
-      const now = Date.now()
-      if (now - lastFiredAt < 400) return
-      lastFiredAt = now
-
-      const orderedSpaces = Object.values(store.spaces)
-        .filter((s) => s.windowId === windowId)
-        .sort((a, b) => a.order - b.order)
-      if (orderedSpaces.length <= 1) return
-
-      const activeSpaceId = store.activeSpaceByWindow[windowId]
-      const currentIdx = orderedSpaces.findIndex((s) => s.id === activeSpaceId)
-      if (currentIdx === -1) return
-
-      // deltaX > 0 → swipe left → next space; deltaX < 0 → swipe right → prev space.
-      const nextIdx = e.deltaX > 0 ? currentIdx + 1 : currentIdx - 1
-      // Clamp: no wrap-around at edges.
-      if (nextIdx < 0 || nextIdx >= orderedSpaces.length) return
-
-      const targetSpace = orderedSpaces[nextIdx]
-      if (!targetSpace) return
-
-      void sendMessage({ type: 'switchTo', spaceId: targetSpace.id, windowId }).then(
-        () => refresh(),
-      )
-    }
-
-    window.addEventListener('wheel', onWheel, { passive: true })
-    return () => window.removeEventListener('wheel', onWheel)
-  }, [view.kind, store, windowId, refresh])
-
-  useEffect(() => {
-    if (windowId === undefined) return
-    const listener = (msg: unknown): boolean => {
-      const m = msg as { type?: string; windowId?: number }
-      if (m?.type === 'openCommandBar' && m.windowId === windowId) {
-        setCommandBarOpen(true)
-      }
-      return false
-    }
-    chrome.runtime.onMessage.addListener(listener)
-    return () => chrome.runtime.onMessage.removeListener(listener)
-  }, [windowId])
+  useReconcileSweep(refresh, refreshPrefs)
+  useTabEventListeners(refresh)
+  useKeyboardShortcuts({ windowId, refresh, onOpenCommandBar: openCommandBar })
+  useHorizontalSwipeSwitcher({
+    enabled: view.kind === 'list',
+    store,
+    windowId,
+    refresh,
+  })
+  useBackgroundMessages({ windowId, onOpenCommandBar: openCommandBar })
 
   const { openMenu, setOpenMenu } = menu
   const { drag, setDrag, dropPos, setDropPos, finalizeDrop } = dnd
