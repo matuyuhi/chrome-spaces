@@ -233,7 +233,8 @@ export function App() {
     }
   }
   const orphanTabIds: number[] = []
-  for (const id of Object.keys(tabs).map(Number)) {
+  for (const idStr of Object.keys(tabs)) {
+    const id = Number(idStr)
     const t = tabs[id]
     if (!t || t.hidden) continue
     if (!claimedTabIds.has(id)) orphanTabIds.push(id)

@@ -11,7 +11,8 @@ export async function reconcile(): Promise<{ dropped: number }> {
   )
   const before = await loadStore()
   const droppedIds = new Set<number>()
-  for (const id of Object.keys(before.tabs).map(Number)) {
+  for (const idStr of Object.keys(before.tabs)) {
+    const id = Number(idStr)
     if (!liveIds.has(id)) droppedIds.add(id)
   }
   for (const f of Object.values(before.folders)) {
