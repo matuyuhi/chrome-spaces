@@ -746,6 +746,9 @@ export async function importStore(
   if (!raw.spaces || typeof raw.spaces !== 'object') {
     throw new Error('Invalid import: missing or invalid spaces map')
   }
+  if (raw.tabs !== undefined && (raw.tabs === null || typeof raw.tabs !== 'object')) {
+    throw new Error('Invalid import: invalid tabs map')
+  }
   if (raw.schemaVersion !== CURRENT_SCHEMA_VERSION) {
     throw new Error(
       `Schema version mismatch: file is v${raw.schemaVersion}, this build is v${CURRENT_SCHEMA_VERSION}`,

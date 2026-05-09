@@ -587,7 +587,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     }
     if (
       !confirm(
-        'Replace ALL Spaces with the backup file? Every tab currently open in this window will be closed, and the tabs from the backup will be reopened in their place. Live folders will repopulate on the next sync.',
+        'Replace ALL Spaces with the backup file? Every tab currently open in this window will be closed, and the tabs from the backup will be reopened in their place. All Spaces in the backup are restored into THIS window — multi-window setups collapse to a single window. Live folders will repopulate on the next sync.',
       )
     )
       return
@@ -943,9 +943,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             <RowLabel>
               <RowTitle>Export / Import</RowTitle>
               <RowDesc>
-                Export saves Spaces, folders, and Live configs to a JSON file.
-                Import replaces the current setup (tab references are stripped
-                — tabs are session-scoped).
+                Export saves Spaces, folders, Live configs and a snapshot
+                of every tab's URL and title to a JSON file. Import
+                replaces the current setup, closes the existing tabs in
+                this window, and reopens the saved tabs from their URLs.
+                All Spaces are restored into the current window.
               </RowDesc>
             </RowLabel>
             <RowControl>

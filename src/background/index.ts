@@ -63,6 +63,7 @@ import {
   findWindowIdForFolder,
   findWindowIdForItem,
   peekUndo,
+  popUndoIfKind,
   recordCloseTab,
   recordDeleteFolder,
   recordDeleteSpace,
@@ -202,8 +203,13 @@ async function handleMessage(msg: Message): Promise<unknown> {
     case 'closeTab': {
       const _tabInfo = await chrome.tabs.get(msg.tabId).catch(() => undefined)
       if (_tabInfo && typeof _tabInfo.windowId === 'number') {
+        const _wid = _tabInfo.windowId
+        // Snapshot undo BEFORE remove — recordCloseTab needs the still-
+        // present folder location and chrome.tabs.get to succeed. If
+        // remove fails, roll the entry back so it doesn't refer to a
+        // tab that's still alive (which would duplicate on undo).
         try {
-          await recordCloseTab(msg.tabId, _tabInfo.windowId)
+          await recordCloseTab(msg.tabId, _wid)
         } catch (e) {
           console.error('[Spaces] undo record failed', e)
         }
@@ -211,10 +217,8 @@ async function handleMessage(msg: Message): Promise<unknown> {
           await chrome.tabs.remove(msg.tabId)
           return
         } catch (e) {
-          // chrome.tabs.get reported a tab but remove failed — fall
-          // through to the self-heal path so the X always clears the
-          // stale row instead of bubbling an error to the UI.
           console.warn('[Spaces] chrome.tabs.remove failed; dropping ref', msg.tabId, e)
+          popUndoIfKind(_wid, 'close-tab')
         }
       }
       // Either chrome.tabs.get failed (zombie reference left over from

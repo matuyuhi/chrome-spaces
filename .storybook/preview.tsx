@@ -31,6 +31,9 @@ if (typeof window !== 'undefined' && !(window as unknown as { chrome?: unknown }
     tabGroups: {
       query: async () => [],
     },
+    storage: {
+      onChanged: { addListener: () => {}, removeListener: () => {} },
+    },
     i18n: {
       getMessage: (key: string, subs?: string | string[]) => {
         const entry = i18nMessages[key]
