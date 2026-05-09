@@ -1,0 +1,69 @@
+{
+  "manifest_name": {
+    "message": "Spaces",
+    "description": "Extension name (kept in English by design)."
+  },
+  "manifest_description": {
+    "message": "ウィンドウごとに分かれた Spaces にタブをグループ化し、ネストしたフォルダや GitHub 検索の Live フォルダをサイドパネルから管理できます。"
+  },
+  "action_title": { "message": "Spaces" },
+
+  "cmd_switchSpace1_description": { "message": "Space 1 に切り替え" },
+  "cmd_switchSpace2_description": { "message": "Space 2 に切り替え" },
+  "cmd_switchSpace3_description": { "message": "Space 3 に切り替え" },
+  "cmd_switchSpace4_description": { "message": "Space 4 に切り替え" },
+  "cmd_switchSpace5_description": { "message": "Space 5 に切り替え" },
+  "cmd_switchSpace6_description": { "message": "Space 6 に切り替え" },
+  "cmd_switchSpace7_description": { "message": "Space 7 に切り替え" },
+  "cmd_switchSpace8_description": { "message": "Space 8 に切り替え" },
+  "cmd_switchSpace9_description": { "message": "Space 9 に切り替え" },
+  "cmd_newSpace_description": { "message": "新しい Space を作成" },
+  "cmd_resetCurrentTab_description": { "message": "現在のタブをベース URL に戻す" },
+  "cmd_syncCurrentLive_description": { "message": "現在のタブの Live フォルダを同期" },
+  "cmd_openCommandBar_description": { "message": "Spaces コマンドバーを開く（全 Space のタブを検索）" },
+
+  "header_title": { "message": "Spaces" },
+  "header_newSpace": { "message": "新しい Space" },
+  "header_settings": { "message": "設定" },
+  "header_convertGroups_one": { "message": "$1 件の Chrome タブグループを Space に変換" },
+  "header_convertGroups_other": { "message": "$1 件の Chrome タブグループを Space に変換" },
+
+  "menu_rename": { "message": "名前を変更" },
+  "menu_icon": { "message": "アイコン" },
+  "menu_color": { "message": "カラー" },
+  "menu_colorAria": { "message": "カラー $1" },
+  "menu_delete_keepTabs": { "message": "削除（タブは残す）" },
+  "menu_delete_closeTabs": { "message": "削除＋タブを閉じる" },
+  "menu_close": { "message": "メニューを閉じる" },
+  "menu_editLiveConfig": { "message": "Live 設定を編集" },
+  "menu_addFolder": { "message": "+ フォルダ" },
+  "menu_addLiveFolder": { "message": "+ Live フォルダ" },
+
+  "tab_resetToBase": { "message": "ベース URL に戻す" },
+  "tab_pinToCurrentUrl": { "message": "現在の URL を固定" },
+  "tab_unpin": { "message": "固定を解除" },
+  "tab_removeFromPinBar": { "message": "ピンバーから外す" },
+  "tab_pinUrlToBar": { "message": "URL をピンバーに追加" },
+  "tab_closeTab": { "message": "タブを閉じる" },
+
+  "banner_dismiss": { "message": "閉じる" },
+
+  "orphan_count_one": { "message": "$1 件のタブがどの Space にも属していません" },
+  "orphan_count_other": { "message": "$1 件のタブがどの Space にも属していません" },
+  "orphan_addToCurrent": { "message": "→ 現在の Space へ" },
+  "orphan_createNewSpace": { "message": "→ 新しい Space へ" },
+  "orphan_addToCurrent_title_one": { "message": "$1 件のタブを「$2」に追加" },
+  "orphan_addToCurrent_title_other": { "message": "$1 件のタブを「$2」に追加" },
+  "orphan_createNewSpace_title_one": { "message": "$1 件のタブをまとめた新しい Space を作成" },
+  "orphan_createNewSpace_title_other": { "message": "$1 件のタブをまとめた新しい Space を作成" },
+
+  "commandBar_search": { "message": "全 Space のタブを検索…" },
+  "commandBar_noMatches": { "message": "一致するタブはありません。" },
+  "commandBar_noTabs": { "message": "タブがまだありません。" },
+  "commandBar_unfiled": { "message": "— 未分類" },
+
+  "ctx_syncLiveFolder": { "message": "この Live フォルダを同期" },
+  "ctx_pinTab": { "message": "タブを現在の URL に固定" },
+  "ctx_unpinTab": { "message": "タブの固定を解除" },
+  "ctx_resetTab": { "message": "タブをベース URL に戻す" }
+}

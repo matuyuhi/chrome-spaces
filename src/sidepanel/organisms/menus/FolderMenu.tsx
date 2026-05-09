@@ -1,3 +1,4 @@
+import { t } from '../../../shared/i18n'
 import { type Folder } from '../../../shared/types'
 import { EmojiInput } from '../../atoms/EmojiInput'
 import { MenuBox, MenuDivider, MenuItem, MenuSection } from '../../atoms/Menu'
@@ -24,25 +25,25 @@ export function FolderMenu({
   const isLive = !!folder.live
   return (
     <MenuBox role="menu" onClick={(e) => e.stopPropagation()}>
-      <MenuItem onClick={onRename}>Rename</MenuItem>
-      {isLive && <MenuItem onClick={onEditLive}>Edit live config</MenuItem>}
+      <MenuItem onClick={onRename}>{t('menu_rename')}</MenuItem>
+      {isLive && <MenuItem onClick={onEditLive}>{t('menu_editLiveConfig')}</MenuItem>}
       {!isLive && (
         <>
-          <MenuItem onClick={onAddFolder}>+ Folder</MenuItem>
-          <MenuItem onClick={onAddLive}>+ Live folder</MenuItem>
+          <MenuItem onClick={onAddFolder}>{t('menu_addFolder')}</MenuItem>
+          <MenuItem onClick={onAddLive}>{t('menu_addLiveFolder')}</MenuItem>
         </>
       )}
-      <MenuSection>Icon</MenuSection>
+      <MenuSection>{t('menu_icon')}</MenuSection>
       <EmojiInput initial={folder.emoji} onChange={onEmoji} />
       <MenuDivider />
       <MenuItem danger onClick={() => onDelete(false)}>
-        Delete (keep tabs)
+        {t('menu_delete_keepTabs')}
       </MenuItem>
       <MenuItem danger onClick={() => onDelete(true)}>
-        Delete + close tabs
+        {t('menu_delete_closeTabs')}
       </MenuItem>
       <MenuDivider />
-      <MenuItem onClick={onClose}>Close menu</MenuItem>
+      <MenuItem onClick={onClose}>{t('menu_close')}</MenuItem>
     </MenuBox>
   )
 }

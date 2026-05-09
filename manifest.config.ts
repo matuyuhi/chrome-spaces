@@ -3,9 +3,10 @@ import pkg from './package.json' with { type: 'json' }
 
 export default defineManifest({
   manifest_version: 3,
-  name: 'Spaces',
+  default_locale: 'en',
+  name: '__MSG_manifest_name__',
   version: pkg.version,
-  description: 'Group your tabs into per-window Spaces with nested folders and live GitHub-search folders, all from Chrome\'s side panel.',
+  description: '__MSG_manifest_description__',
   icons: {
     16: 'img/icon_16.png',
     32: 'img/icon_32.png',
@@ -30,7 +31,7 @@ export default defineManifest({
     open_in_tab: true,
   },
   action: {
-    default_title: 'Spaces',
+    default_title: '__MSG_action_title__',
     default_icon: {
       16: 'img/icon_16.png',
       32: 'img/icon_32.png',
@@ -38,18 +39,18 @@ export default defineManifest({
     },
   },
   commands: {
-    'switch-space-1': { description: 'Switch to Space 1' },
-    'switch-space-2': { description: 'Switch to Space 2' },
-    'switch-space-3': { description: 'Switch to Space 3' },
-    'switch-space-4': { description: 'Switch to Space 4' },
-    'switch-space-5': { description: 'Switch to Space 5' },
-    'switch-space-6': { description: 'Switch to Space 6' },
-    'switch-space-7': { description: 'Switch to Space 7' },
-    'switch-space-8': { description: 'Switch to Space 8' },
-    'switch-space-9': { description: 'Switch to Space 9' },
-    'new-space': { description: 'Create new Space' },
-    'reset-current-tab': { description: 'Reset current tab to its base URL' },
-    'sync-current-live': { description: 'Sync the Live folder of the current tab' },
-    'open-command-bar': { description: 'Open the Spaces command bar (search tabs across spaces)' },
+    'switch-space-1': { description: '__MSG_cmd_switchSpace1_description__' },
+    'switch-space-2': { description: '__MSG_cmd_switchSpace2_description__' },
+    'switch-space-3': { description: '__MSG_cmd_switchSpace3_description__' },
+    'switch-space-4': { description: '__MSG_cmd_switchSpace4_description__' },
+    'switch-space-5': { description: '__MSG_cmd_switchSpace5_description__' },
+    'switch-space-6': { description: '__MSG_cmd_switchSpace6_description__' },
+    'switch-space-7': { description: '__MSG_cmd_switchSpace7_description__' },
+    'switch-space-8': { description: '__MSG_cmd_switchSpace8_description__' },
+    'switch-space-9': { description: '__MSG_cmd_switchSpace9_description__' },
+    'new-space': { description: '__MSG_cmd_newSpace_description__' },
+    'reset-current-tab': { description: '__MSG_cmd_resetCurrentTab_description__' },
+    'sync-current-live': { description: '__MSG_cmd_syncCurrentLive_description__' },
+    'open-command-bar': { description: '__MSG_cmd_openCommandBar_description__' },
   },
 })

@@ -1,4 +1,5 @@
 import styled from '@emotion/styled'
+import { plural, t } from '../../shared/i18n'
 import { tokens } from '../theme'
 import { LinkButton } from '../atoms/Button'
 
@@ -35,22 +36,30 @@ export function OrphanBanner({
   if (count === 0) return null
   return (
     <Box>
-      <Count>
-        {count} tab{count === 1 ? '' : 's'} not in any Space
-      </Count>
+      <Count>{plural(count, 'orphan_count_one', 'orphan_count_other', count)}</Count>
       {spaceName && (
         <LinkButton
-          title={`Add ${count} tab(s) to "${spaceName}"`}
+          title={plural(
+            count,
+            'orphan_addToCurrent_title_one',
+            'orphan_addToCurrent_title_other',
+            [String(count), spaceName],
+          )}
           onClick={onAddToCurrent}
         >
-          → current Space
+          {t('orphan_addToCurrent')}
         </LinkButton>
       )}
       <LinkButton
-        title={`Create a new Space holding these ${count} tab(s)`}
+        title={plural(
+          count,
+          'orphan_createNewSpace_title_one',
+          'orphan_createNewSpace_title_other',
+          count,
+        )}
         onClick={onCreateNewSpace}
       >
-        → new Space
+        {t('orphan_createNewSpace')}
       </LinkButton>
     </Box>
   )

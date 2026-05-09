@@ -1,4 +1,5 @@
 import styled from '@emotion/styled'
+import { t } from '../../shared/i18n'
 import { tokens } from '../theme'
 import { LinkButton } from '../atoms/Button'
 
@@ -24,7 +25,7 @@ export function ErrorBanner({
   return (
     <Box role="alert">
       {message}
-      <LinkButton onClick={onDismiss}>dismiss</LinkButton>
+      <LinkButton onClick={onDismiss}>{t('banner_dismiss')}</LinkButton>
     </Box>
   )
 }

@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n'
 import {
   pinTab,
   resetTabToBase,
@@ -19,31 +20,31 @@ export async function installContextMenus(): Promise<void> {
   await chrome.contextMenus.removeAll()
   chrome.contextMenus.create({
     id: ITEM_SYNC_LIVE,
-    title: 'Sync this Live folder',
+    title: t('ctx_syncLiveFolder'),
     contexts: ['page', 'frame'],
     documentUrlPatterns: WEB_PAGES,
   })
   chrome.contextMenus.create({
     id: ITEM_PIN,
-    title: 'Pin tab to current URL',
+    title: t('ctx_pinTab'),
     contexts: ['page', 'frame'],
     documentUrlPatterns: WEB_PAGES,
   })
   chrome.contextMenus.create({
     id: ITEM_UNPIN,
-    title: 'Unpin tab',
+    title: t('ctx_unpinTab'),
     contexts: ['page', 'frame'],
     documentUrlPatterns: WEB_PAGES,
   })
   chrome.contextMenus.create({
     id: ITEM_RESET,
-    title: 'Reset tab to base URL',
+    title: t('ctx_resetTab'),
     contexts: ['page', 'frame'],
     documentUrlPatterns: WEB_PAGES,
   })
   chrome.contextMenus.create({
     id: ITEM_SYNC_LIVE_ACTION,
-    title: 'Sync this Live folder',
+    title: t('ctx_syncLiveFolder'),
     contexts: ['action'],
   })
 }

@@ -1,4 +1,5 @@
 import { vi } from 'vitest'
+import enMessages from '../../public/_locales/en/messages.json'
 
 interface MockArea {
   get: (
@@ -164,6 +165,19 @@ export function setupChromeMock(): ChromeMock {
     onRemoved: { addListener: vi.fn(), removeListener: vi.fn() },
   }
 
+  const i18nMessages = enMessages as Record<string, { message: string }>
+  const i18nApi = {
+    getMessage: vi.fn((key: string, subs?: string | string[]) => {
+      const entry = i18nMessages[key]
+      if (!entry) return ''
+      const list = subs === undefined ? [] : Array.isArray(subs) ? subs : [subs]
+      return entry.message.replace(/\$(\d)/g, (_, d: string) => {
+        const i = Number(d) - 1
+        return i >= 0 && i < list.length ? list[i] : ''
+      })
+    }),
+  }
+
   ;(globalThis as unknown as { chrome: unknown }).chrome = {
     storage: {
       sync: makeArea(sync),
@@ -173,6 +187,7 @@ export function setupChromeMock(): ChromeMock {
     alarms: alarmsApi,
     contextMenus: contextMenusApi,
     windows: windowsApi,
+    i18n: i18nApi,
   }
 
   return { sync, local, tabs, alarms: alarmsBacking, contextMenuItems }
