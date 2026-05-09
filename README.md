@@ -14,7 +14,7 @@ the Side Panel's view.
 ## Install (unpacked)
 
 ```bash
-git clone …
+git clone git@github.com:matuyuhi/chrome-spaces.git
 cd chrome-spaces
 npm install     # installs deps; engine pinned via .node-version (24.15.0)
 npm run build   # → dist/
