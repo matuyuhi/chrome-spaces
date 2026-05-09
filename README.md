@@ -1,5 +1,10 @@
 # Spaces
 
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/nephboakgdhbknfgjpjcleaddkdkfceh?label=chrome%20web%20store&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/spaces/nephboakgdhbknfgjpjcleaddkdkfceh)
+
+[//]: # ([![Users]&#40;https://img.shields.io/chrome-web-store/users/nephboakgdhbknfgjpjcleaddkdkfceh?label=users&#41;]&#40;https://chromewebstore.google.com/detail/spaces/nephboakgdhbknfgjpjcleaddkdkfceh&#41;)
+[//]: # ([![Rating]&#40;https://img.shields.io/chrome-web-store/rating/nephboakgdhbknfgjpjcleaddkdkfceh?label=rating&#41;]&#40;https://chromewebstore.google.com/detail/spaces/nephboakgdhbknfgjpjcleaddkdkfceh&#41;)
+
 Arc-style sidebar for Chrome. Vertical tab list, nested folders per Space,
 and GitHub PR / Issue **Live folders** that auto-populate from a query.
 
@@ -11,7 +16,17 @@ the Side Panel's view.
 <img width="1200" alt="image" src="/store-assets/01-resize.png" />
 
 
-## Install (unpacked)
+## Install
+
+### From the Chrome Web Store (recommended)
+
+→ **[Add Spaces to Chrome](https://chromewebstore.google.com/detail/spaces/nephboakgdhbknfgjpjcleaddkdkfceh)**
+
+After installing, click the **Spaces** icon in the toolbar to open the
+Side Panel. (Recommended) Hide Chrome's tab strip with
+`chrome://flags/#vertical-tabs` → Enabled, then restart.
+
+### Build from source
 
 ```bash
 git clone git@github.com:matuyuhi/chrome-spaces.git
@@ -26,8 +41,6 @@ In Chrome:
 2. Toggle **Developer mode**
 3. **Load unpacked** → select `dist/`
 4. Click the **Spaces** icon in the toolbar — the Side Panel opens
-5. (Recommended) Hide Chrome's tab strip with
-   `chrome://flags/#vertical-tabs` → Enabled, restart
 
 ## Concepts
 
@@ -167,5 +180,3 @@ npm run dev        # vite dev (HMR for side panel; SW reloads via crxjs)
 
 Tests run in the `node` environment with a fake `globalThis.chrome`
 installed by `setupChromeMock()` (see `src/background/test-utils.ts`).
-
-There is no Web Store release. Local unpacked install only.
