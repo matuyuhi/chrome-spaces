@@ -16,9 +16,27 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      - name: Cache Bun install
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-install-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-install-
+
       - run: bun install --frozen-lockfile
 
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          # Bumping the playwright dep in bun.lock invalidates the cache.
+          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
+
       - name: Install Playwright Chromium
+        # `--with-deps` runs apt-get for system libs (not cachable as a
+        # directory). On a cache hit the browser bin is already there so
+        # only the apt step actually does work.
         run: bunx playwright install --with-deps chromium
 
       - name: Build (tsc + vite)
