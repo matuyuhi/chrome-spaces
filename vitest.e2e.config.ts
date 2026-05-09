@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config'
 
-// Separate config for E2E so the default `npm test` stays fast.
+// Separate config for E2E so the default `bun test` stays fast.
 // E2E tests live in e2e/, build dist/ as a prerequisite, and launch
 // real Chromium with the unpacked extension loaded (see e2e/helpers.ts).
 export default defineConfig({

@@ -31,8 +31,8 @@ Side Panel. (Recommended) Hide Chrome's tab strip with
 ```bash
 git clone git@github.com:matuyuhi/chrome-spaces.git
 cd chrome-spaces
-npm install     # installs deps; engine pinned via .node-version (24.15.0)
-npm run build   # → dist/
+bun install     # installs deps; engine pinned via .node-version (24.15.0)
+bun run build   # → dist/
 ```
 
 In Chrome:
@@ -172,10 +172,10 @@ sync history. The underlying Chrome Tab Groups are ungrouped.
 ## Development
 
 ```bash
-npm test           # vitest run
-npm run test:watch
-npm run build      # tsc + vite build → dist/
-npm run dev        # vite dev (HMR for side panel; SW reloads via crxjs)
+bun test           # vitest run
+bun run test:watch
+bun run build      # tsc + vite build → dist/
+bun run dev        # vite dev (HMR for side panel; SW reloads via crxjs)
 ```
 
 Tests run in the `node` environment with a fake `globalThis.chrome`
