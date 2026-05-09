@@ -29,7 +29,11 @@ jobs:
         run: bun run build
 
       - name: Test (vitest + Storybook)
-        run: bun test
+        # `bun test` invokes Bun's built-in test runner, which doesn't
+        # know about vitest globals (vi.*) and would also discover the
+        # e2e/ files outside of vitest.e2e.config.ts. Use `bun run test`
+        # to dispatch through the package.json script into vitest.
+        run: bun run test
 
       # Chrome extensions still need a real (non-headless) browser on
       # the Playwright-bundled Chromium, so the E2E suite runs headed
