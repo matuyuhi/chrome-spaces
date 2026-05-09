@@ -1,0 +1,73 @@
+{
+  "manifest_name": {
+    "message": "Spaces",
+    "description": "Extension name shown in chrome://extensions and Chrome Web Store."
+  },
+  "manifest_description": {
+    "message": "Group your tabs into per-window Spaces with nested folders and live GitHub-search folders, all from Chrome's side panel.",
+    "description": "Extension description shown in chrome://extensions."
+  },
+  "action_title": {
+    "message": "Spaces",
+    "description": "Toolbar action button tooltip."
+  },
+
+  "cmd_switchSpace1_description": { "message": "Switch to Space 1" },
+  "cmd_switchSpace2_description": { "message": "Switch to Space 2" },
+  "cmd_switchSpace3_description": { "message": "Switch to Space 3" },
+  "cmd_switchSpace4_description": { "message": "Switch to Space 4" },
+  "cmd_switchSpace5_description": { "message": "Switch to Space 5" },
+  "cmd_switchSpace6_description": { "message": "Switch to Space 6" },
+  "cmd_switchSpace7_description": { "message": "Switch to Space 7" },
+  "cmd_switchSpace8_description": { "message": "Switch to Space 8" },
+  "cmd_switchSpace9_description": { "message": "Switch to Space 9" },
+  "cmd_newSpace_description": { "message": "Create new Space" },
+  "cmd_resetCurrentTab_description": { "message": "Reset current tab to its base URL" },
+  "cmd_syncCurrentLive_description": { "message": "Sync the Live folder of the current tab" },
+  "cmd_openCommandBar_description": { "message": "Open the Spaces command bar (search tabs across spaces)" },
+
+  "header_title": { "message": "Spaces" },
+  "header_newSpace": { "message": "New Space" },
+  "header_settings": { "message": "Settings" },
+  "header_convertGroups_one": { "message": "Convert $1 Chrome Tab Group to Space" },
+  "header_convertGroups_other": { "message": "Convert $1 Chrome Tab Groups to Spaces" },
+
+  "menu_rename": { "message": "Rename" },
+  "menu_icon": { "message": "Icon" },
+  "menu_color": { "message": "Color" },
+  "menu_colorAria": { "message": "Color $1" },
+  "menu_delete_keepTabs": { "message": "Delete (keep tabs)" },
+  "menu_delete_closeTabs": { "message": "Delete + close tabs" },
+  "menu_close": { "message": "Close menu" },
+  "menu_editLiveConfig": { "message": "Edit live config" },
+  "menu_addFolder": { "message": "+ Folder" },
+  "menu_addLiveFolder": { "message": "+ Live folder" },
+
+  "tab_resetToBase": { "message": "Reset to base URL" },
+  "tab_pinToCurrentUrl": { "message": "Pin to current URL" },
+  "tab_unpin": { "message": "Unpin" },
+  "tab_removeFromPinBar": { "message": "Remove from pin bar" },
+  "tab_pinUrlToBar": { "message": "Pin URL to bar" },
+  "tab_closeTab": { "message": "Close tab" },
+
+  "banner_dismiss": { "message": "dismiss" },
+
+  "orphan_count_one": { "message": "$1 tab not in any Space" },
+  "orphan_count_other": { "message": "$1 tabs not in any Space" },
+  "orphan_addToCurrent": { "message": "→ current Space" },
+  "orphan_createNewSpace": { "message": "→ new Space" },
+  "orphan_addToCurrent_title_one": { "message": "Add $1 tab to \"$2\"" },
+  "orphan_addToCurrent_title_other": { "message": "Add $1 tabs to \"$2\"" },
+  "orphan_createNewSpace_title_one": { "message": "Create a new Space holding this $1 tab" },
+  "orphan_createNewSpace_title_other": { "message": "Create a new Space holding these $1 tabs" },
+
+  "commandBar_search": { "message": "Search tabs across spaces…" },
+  "commandBar_noMatches": { "message": "No matches." },
+  "commandBar_noTabs": { "message": "No tabs yet." },
+  "commandBar_unfiled": { "message": "— unfiled" },
+
+  "ctx_syncLiveFolder": { "message": "Sync this Live folder" },
+  "ctx_pinTab": { "message": "Pin tab to current URL" },
+  "ctx_unpinTab": { "message": "Unpin tab" },
+  "ctx_resetTab": { "message": "Reset tab to base URL" }
+}

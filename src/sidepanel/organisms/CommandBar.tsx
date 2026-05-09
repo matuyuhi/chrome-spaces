@@ -1,5 +1,6 @@
 import styled from '@emotion/styled'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { t } from '../../shared/i18n'
 import { sendMessage } from '../../shared/messaging'
 import { type SpaceStore } from '../../shared/types'
 import { useAppCtx } from '../AppContext'
@@ -217,10 +218,10 @@ export function CommandBar({ onClose }: { onClose: () => void }) {
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search tabs across spaces…"
+          placeholder={t('commandBar_search')}
         />
         {hits.length === 0 ? (
-          <Empty>{query ? 'No matches.' : 'No tabs yet.'}</Empty>
+          <Empty>{query ? t('commandBar_noMatches') : t('commandBar_noTabs')}</Empty>
         ) : (
           <Results ref={listRef}>
             {hits.map((hit, idx) => (
@@ -237,7 +238,7 @@ export function CommandBar({ onClose }: { onClose: () => void }) {
                   <span style={{ width: 14 }} />
                 )}
                 <span className="title">{hit.tab.title || hit.tab.url}</span>
-                <span className="meta">{hit.spaceName ?? '— unfiled'}</span>
+                <span className="meta">{hit.spaceName ?? t('commandBar_unfiled')}</span>
               </Row>
             ))}
           </Results>

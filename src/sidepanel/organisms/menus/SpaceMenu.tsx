@@ -1,4 +1,5 @@
 import styled from '@emotion/styled'
+import { t } from '../../../shared/i18n'
 import { type Space, type SpaceColor } from '../../../shared/types'
 import { COLORS, COLOR_HEX, tokens } from '../../theme'
 import { EmojiInput } from '../../atoms/EmojiInput'
@@ -43,10 +44,10 @@ export function SpaceMenu({
 }) {
   return (
     <MenuBox role="menu" onClick={(e) => e.stopPropagation()}>
-      <MenuItem onClick={onRename}>Rename</MenuItem>
-      <MenuSection>Icon</MenuSection>
+      <MenuItem onClick={onRename}>{t('menu_rename')}</MenuItem>
+      <MenuSection>{t('menu_icon')}</MenuSection>
       <EmojiInput initial={space.emoji} onChange={onEmoji} />
-      <MenuSection>Color</MenuSection>
+      <MenuSection>{t('menu_color')}</MenuSection>
       <ColorGrid>
         {COLORS.map((c) => (
           <Swatch
@@ -54,19 +55,19 @@ export function SpaceMenu({
             color={COLOR_HEX[c]}
             isCurrent={c === space.color}
             onClick={() => onColor(c)}
-            aria-label={`Color ${c}`}
+            aria-label={t('menu_colorAria', c)}
           />
         ))}
       </ColorGrid>
       <MenuDivider />
       <MenuItem danger onClick={() => onDelete(false)}>
-        Delete (keep tabs)
+        {t('menu_delete_keepTabs')}
       </MenuItem>
       <MenuItem danger onClick={() => onDelete(true)}>
-        Delete + close tabs
+        {t('menu_delete_closeTabs')}
       </MenuItem>
       <MenuDivider />
-      <MenuItem onClick={onClose}>Close menu</MenuItem>
+      <MenuItem onClick={onClose}>{t('menu_close')}</MenuItem>
     </MenuBox>
   )
 }

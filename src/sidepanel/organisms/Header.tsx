@@ -1,4 +1,5 @@
 import styled from '@emotion/styled'
+import { plural, t } from '../../shared/i18n'
 import { tokens } from '../theme'
 import { PillButton } from '../atoms/Button'
 import { Download, Plus, Settings as SettingsIcon } from '../atoms/icons'
@@ -44,25 +45,31 @@ export function PanelHeader({
   onNewSpace,
   onOpenSettings,
 }: Props) {
+  const newSpaceLabel = t('header_newSpace')
+  const settingsLabel = t('header_settings')
   return (
     <Bar>
-      <h1>Spaces</h1>
+      <h1>{t('header_title')}</h1>
       <Actions>
         {tabGroupCount > 0 && (
           <PillButton
-            title={`Convert ${tabGroupCount} Chrome Tab Group${tabGroupCount === 1 ? '' : 's'} to Space${tabGroupCount === 1 ? '' : 's'}`}
+            title={plural(
+              tabGroupCount,
+              'header_convertGroups_one',
+              'header_convertGroups_other',
+            )}
             onClick={onImportTabGroups}
           >
             <Download size={14} />
             <Count>{tabGroupCount}</Count>
           </PillButton>
         )}
-        <PillButton title="New Space" aria-label="New Space" onClick={onNewSpace}>
+        <PillButton title={newSpaceLabel} aria-label={newSpaceLabel} onClick={onNewSpace}>
           <Plus size={14} />
         </PillButton>
         <PillButton
-          title="Settings"
-          aria-label="Settings"
+          title={settingsLabel}
+          aria-label={settingsLabel}
           onClick={onOpenSettings}
         >
           <SettingsIcon size={14} />
