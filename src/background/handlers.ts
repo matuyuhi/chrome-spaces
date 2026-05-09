@@ -1,4 +1,4 @@
-import { dropTab, registerTab, setLastActiveTab } from './space-manager'
+import { dropTab, recordTabUrl, registerTab, setLastActiveTab } from './space-manager'
 import { updateStore } from './storage'
 
 export async function onTabCreated(tab: chrome.tabs.Tab): Promise<void> {
@@ -7,6 +7,20 @@ export async function onTabCreated(tab: chrome.tabs.Tab): Promise<void> {
 
 export async function onTabActivated(info: chrome.tabs.TabActiveInfo): Promise<void> {
   await setLastActiveTab(info.windowId, info.tabId)
+}
+
+export async function onTabUpdated(
+  tabId: number,
+  changeInfo: chrome.tabs.TabChangeInfo,
+  tab: chrome.tabs.Tab,
+): Promise<void> {
+  // Snapshot URL/title so the next backup-export can recreate this tab.
+  // Only fire on the events that actually change either field.
+  if (changeInfo.url === undefined && changeInfo.title === undefined) return
+  await recordTabUrl(tabId, {
+    url: changeInfo.url ?? tab.url,
+    title: changeInfo.title ?? tab.title,
+  })
 }
 
 export async function onTabRemoved(tabId: number): Promise<void> {

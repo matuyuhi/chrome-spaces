@@ -3,6 +3,7 @@ import {
   onTabAttached,
   onTabCreated,
   onTabRemoved,
+  onTabUpdated,
   onWindowRemoved,
 } from './handlers'
 import { handleCommand, resolveWindowId } from './commands'
@@ -206,11 +207,20 @@ async function handleMessage(msg: Message): Promise<unknown> {
         } catch (e) {
           console.error('[Spaces] undo record failed', e)
         }
-        return chrome.tabs.remove(msg.tabId)
+        try {
+          await chrome.tabs.remove(msg.tabId)
+          return
+        } catch (e) {
+          // chrome.tabs.get reported a tab but remove failed — fall
+          // through to the self-heal path so the X always clears the
+          // stale row instead of bubbling an error to the UI.
+          console.warn('[Spaces] chrome.tabs.remove failed; dropping ref', msg.tabId, e)
+        }
       }
-      // Tab is no longer alive in Chrome (zombie reference left over from
-      // an SW suspension that missed onTabRemoved). Self-heal by dropping
-      // the stale ref so the X button always succeeds from the user's POV.
+      // Either chrome.tabs.get failed (zombie reference left over from
+      // an SW suspension that missed onTabRemoved, or a stale tabId from
+      // a botched import) or remove failed. Drop the ref so the X button
+      // always succeeds from the user's POV.
       await dropTab(msg.tabId)
       return
     }
@@ -309,6 +319,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.tabs.onAttached.addListener((tabId, info) => {
   void onTabAttached(tabId, info)
+})
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  void onTabUpdated(tabId, changeInfo, tab)
 })
 
 chrome.windows.onRemoved.addListener((windowId) => {

@@ -3,6 +3,7 @@ import {
   type FolderId,
   type ItemRef,
   type LiveSource,
+  type ManagedTab,
   type PinnedUrl,
   type Space,
   type SpaceColor,
@@ -20,6 +21,29 @@ import { scheduleSync, unscheduleSync } from './live/alarms'
 
 const now = (): number => Date.now()
 const uid = (): string => crypto.randomUUID()
+
+// During importStore we create dozens of Chrome tabs at once. The
+// chrome.tabs.onCreated listener would otherwise call registerTab for
+// each, racing with our final store overwrite. Set this flag for the
+// duration of the import; handlers early-return while it's set.
+let importInProgress = false
+export function isImportInProgress(): boolean {
+  return importInProgress
+}
+
+export async function recordTabUrl(
+  tabId: number,
+  changes: { url?: string; title?: string },
+): Promise<void> {
+  if (importInProgress) return
+  if (changes.url === undefined && changes.title === undefined) return
+  await updateStore((s) => {
+    const t = s.tabs[tabId]
+    if (!t) return
+    if (changes.url !== undefined && changes.url !== '') t.url = changes.url
+    if (changes.title !== undefined && changes.title !== '') t.title = changes.title
+  })
+}
 
 // ---- Space CRUD ----------------------------------------------------------
 
@@ -404,20 +428,38 @@ export async function resetTabToBase(tabId: number): Promise<boolean> {
 // ---- Tab record bookkeeping (called from chrome.tabs handlers) ----------
 
 export async function registerTab(tab: chrome.tabs.Tab): Promise<void> {
+  if (importInProgress) return
   if (typeof tab.id !== 'number' || typeof tab.windowId !== 'number') return
   const tabId = tab.id
   const windowId = tab.windowId
   await updateStore((s) => {
+    const prev = s.tabs[tabId]
     s.tabs[tabId] = {
-      ...s.tabs[tabId],
+      ...prev,
       tabId,
       windowId,
       // Treat creation as activity so a brand-new tab isn't immediately
       // a candidate for archival.
-      lastActiveAt: s.tabs[tabId]?.lastActiveAt ?? now(),
+      lastActiveAt: prev?.lastActiveAt ?? now(),
+      url: tab.url || tab.pendingUrl || prev?.url,
+      title: tab.title || prev?.title,
     }
     // Append to the active Space's root folder if not already tracked.
-    const activeId = s.activeSpaceByWindow[windowId]
+    // If no active Space is recorded for this window (e.g. Chrome
+    // restart re-issued the windowId so onWindowRemoved cleared the
+    // pointer), but the user does have Spaces in this window, pick the
+    // lowest-`order` Space as the implicit active so new tabs still
+    // land somewhere instead of becoming orphans.
+    let activeId = s.activeSpaceByWindow[windowId]
+    if (!activeId) {
+      const candidate = Object.values(s.spaces)
+        .filter((sp) => sp.windowId === windowId)
+        .sort((a, b) => a.order - b.order)[0]
+      if (candidate) {
+        activeId = candidate.id
+        s.activeSpaceByWindow[windowId] = candidate.id
+      }
+    }
     if (!activeId) return
     const space = s.spaces[activeId]
     if (!space) return
@@ -435,6 +477,7 @@ export async function registerTab(tab: chrome.tabs.Tab): Promise<void> {
 }
 
 export async function dropTab(tabId: number): Promise<void> {
+  if (importInProgress) return
   await updateStore((s) => {
     delete s.tabs[tabId]
     for (const f of Object.values(s.folders)) {
@@ -456,6 +499,7 @@ export async function dropTab(tabId: number): Promise<void> {
 }
 
 export async function setLastActiveTab(windowId: number, tabId: number): Promise<void> {
+  if (importInProgress) return
   const store = await loadStore()
   const activeId = store.activeSpaceByWindow[windowId]
   // Even if the Space pointer doesn't change, refresh the per-tab
@@ -678,14 +722,17 @@ export async function importChromeTabGroups(windowId: number): Promise<Space[]> 
   return created
 }
 
-// Replace the entire store with a previously-exported one. Tab refs and
-// the TabRecord map are dropped because tab ids are session-scoped — the
-// imported store almost certainly came from a different Chrome session.
-// Folder structure / Live config / pinned baseUrls (those live on
-// TabRecord, dropped) — only the durable parts survive.
+// Replace the entire store with a previously-exported one. Tab ids are
+// session-scoped, so we recreate real Chrome tabs from each
+// TabRecord.url and rewrite every ItemRef.tabId / managedTab.tabId to
+// the new ids. Folders without recoverable URLs are kept structurally
+// but their tab refs are dropped. Live folders' managedTabs are
+// recreated when they carry a url.
 //
 // `currentWindowId` rehomes every Space and Live alarm to the window the
-// user is in right now, since the source windowIds are stale too.
+// user is in right now, since the source windowIds are stale too. Every
+// non-pinned tab in that window is closed before recreation so the
+// final state matches the backup faithfully.
 export async function importStore(
   raw: SpaceStore,
   currentWindowId: number,
@@ -704,40 +751,291 @@ export async function importStore(
       `Schema version mismatch: file is v${raw.schemaVersion}, this build is v${CURRENT_SCHEMA_VERSION}`,
     )
   }
-  // Strip tab refs from every folder; reset Live folder managedTabs.
-  const folders: SpaceStore['folders'] = {}
-  for (const f of Object.values(raw.folders)) {
-    folders[f.id] = {
-      ...f,
-      items: f.items.filter((it) => it.kind === 'folder'),
-      live: f.live
+
+  importInProgress = true
+  try {
+    // 1. Wipe the slate: close every existing tab in this window so the
+    //    final state is exactly the backup. We can't close the *last*
+    //    tab in a window (Chrome will close the window itself), so keep
+    //    one as a scratch tab and close it after the recreate phase.
+    const existing = (await chrome.tabs.query({ windowId: currentWindowId })).filter(
+      (t): t is chrome.tabs.Tab & { id: number } => typeof t.id === 'number',
+    )
+    let scratchId: number | undefined
+    if (existing.length > 0) {
+      scratchId = existing[0]!.id
+      const closeIds = existing.slice(1).map((t) => t.id)
+      if (closeIds.length > 0) {
+        try {
+          await chrome.tabs.remove(closeIds)
+        } catch {
+          /* ignore — some tabs may already be gone */
+        }
+      }
+    }
+
+    // 2. Decide which Space ends up active. Prefer the source's pointer,
+    //    otherwise pick the lowest-`order` Space.
+    const orderedSpaces = Object.values(raw.spaces).sort((a, b) => a.order - b.order)
+    let activeSpaceId: SpaceId | undefined
+    for (const id of Object.values(raw.activeSpaceByWindow ?? {})) {
+      if (raw.spaces[id]) {
+        activeSpaceId = id
+        break
+      }
+    }
+    if (!activeSpaceId && orderedSpaces.length > 0) {
+      activeSpaceId = orderedSpaces[0]!.id
+    }
+
+    // 3. Recreate tabs for every space, depth-first in the source's
+    //    items[] order. Map old tab ids → new tab ids.
+    const oldToNew = new Map<number, number>()
+    const tabRecords: Record<number, TabRecord> = {}
+
+    const collectTabRefs = (
+      folderId: FolderId,
+      out: { oldTabId: number }[],
+      seen: Set<FolderId>,
+    ): void => {
+      if (seen.has(folderId)) return
+      seen.add(folderId)
+      const f = raw.folders[folderId]
+      if (!f) return
+      for (const it of f.items) {
+        if (it.kind === 'tab') out.push({ oldTabId: it.tabId })
+        else if (it.kind === 'folder') collectTabRefs(it.folderId, out, seen)
+      }
+    }
+
+    const createOne = async (
+      url: string | undefined,
+      oldRec: TabRecord | undefined,
+    ): Promise<number | undefined> => {
+      if (!url) return undefined
+      let created: chrome.tabs.Tab
+      try {
+        created = await chrome.tabs.create({
+          url,
+          windowId: currentWindowId,
+          active: false,
+        })
+      } catch (e) {
+        console.warn('[Spaces] import: failed to create tab', url, e)
+        return undefined
+      }
+      const newId = created.id
+      if (typeof newId !== 'number') return undefined
+      tabRecords[newId] = {
+        tabId: newId,
+        windowId: currentWindowId,
+        baseUrl: oldRec?.baseUrl,
+        lastActiveAt: now(),
+        url,
+        title: oldRec?.title ?? created.title,
+      }
+      return newId
+    }
+
+    for (const sp of orderedSpaces) {
+      const refs: { oldTabId: number }[] = []
+      collectTabRefs(sp.rootFolderId, refs, new Set())
+      for (const { oldTabId } of refs) {
+        const oldRec = raw.tabs?.[oldTabId]
+        const url = oldRec?.url
+        const newId = await createOne(url, oldRec)
+        if (typeof newId === 'number') oldToNew.set(oldTabId, newId)
+      }
+    }
+
+    // 4. Recreate Live folder managedTabs that carry a url. Materialize
+    //    the same way; managedTabs without a tabId will simply re-fetch
+    //    on the next sync, so this is a best-effort restore.
+    const newManagedByFolder = new Map<FolderId, ManagedTab[]>()
+    for (const f of Object.values(raw.folders)) {
+      if (!f.live) continue
+      const out: ManagedTab[] = []
+      for (const m of f.live.managedTabs) {
+        if (!m.url) continue
+        let newTabId: number | undefined
+        if (typeof m.tabId === 'number') {
+          // managedTab had a materialized tab in the backup — recreate it.
+          newTabId = await createOne(m.url, raw.tabs?.[m.tabId])
+          if (typeof newTabId === 'number') oldToNew.set(m.tabId, newTabId)
+        }
+        out.push({
+          externalId: m.externalId,
+          url: m.url,
+          title: m.title,
+          tabId: newTabId,
+          addedAt: m.addedAt,
+        })
+      }
+      newManagedByFolder.set(f.id, out)
+    }
+
+    // 5. Build the new store by remapping ids.
+    const folders: SpaceStore['folders'] = {}
+    for (const f of Object.values(raw.folders)) {
+      const remappedItems = f.items
+        .map((it): ItemRef | undefined => {
+          if (it.kind === 'folder') return it
+          if (it.kind === 'live') return it
+          const newId = oldToNew.get(it.tabId)
+          if (typeof newId !== 'number') return undefined
+          return { kind: 'tab', tabId: newId }
+        })
+        .filter((it): it is ItemRef => it !== undefined)
+
+      const newLive = f.live
         ? {
             source: f.live.source,
             refreshIntervalMin: f.live.refreshIntervalMin,
-            managedTabs: [],
+            managedTabs: newManagedByFolder.get(f.id) ?? [],
             starterTabId: undefined,
             lastSyncAt: undefined,
             lastSyncError: undefined,
+            etag: undefined,
           }
-        : undefined,
+        : undefined
+
+      folders[f.id] = {
+        ...f,
+        items: remappedItems,
+        live: newLive,
+      }
     }
-  }
-  const spaces: SpaceStore['spaces'] = {}
-  for (const sp of Object.values(raw.spaces)) {
-    spaces[sp.id] = {
-      ...sp,
-      windowId: currentWindowId,
-      lastActiveTabId: undefined,
+
+    const spaces: SpaceStore['spaces'] = {}
+    for (const sp of Object.values(raw.spaces)) {
+      const lastActive =
+        sp.lastActiveTabId !== undefined ? oldToNew.get(sp.lastActiveTabId) : undefined
+      spaces[sp.id] = {
+        ...sp,
+        windowId: currentWindowId,
+        lastActiveTabId: lastActive,
+      }
     }
+
+    const next: SpaceStore = {
+      spaces,
+      folders,
+      tabs: tabRecords,
+      activeSpaceByWindow: activeSpaceId ? { [currentWindowId]: activeSpaceId } : {},
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+    }
+    await updateStore(() => next)
+
+    // 6. Activate one of the active space's tabs / hide the rest.
+    //    Mirrors switchTo's logic. Scratch tab handling: if the active
+    //    space ended up with at least one tab, close the scratch.
+    //    Otherwise adopt the scratch into the active space so the
+    //    window isn't left empty.
+    if (activeSpaceId) {
+      const activeTabIds = new Set(collectSpaceTabIds(next, activeSpaceId))
+      let activatedId: number | undefined
+
+      if (activeTabIds.size === 0 && typeof scratchId === 'number') {
+        // Adopt the scratch tab as the active space's starter.
+        const adoptId = scratchId
+        scratchId = undefined
+        await updateStore((s) => {
+          s.tabs[adoptId] = {
+            tabId: adoptId,
+            windowId: currentWindowId,
+            lastActiveAt: now(),
+          }
+          const sp = s.spaces[activeSpaceId]
+          if (!sp) return
+          const root = s.folders[sp.rootFolderId]
+          if (root && !root.items.some((it) => it.kind === 'tab' && it.tabId === adoptId)) {
+            root.items.push({ kind: 'tab', tabId: adoptId })
+          }
+        })
+        activeTabIds.add(adoptId)
+      }
+
+      // Pick a target to activate.
+      const preferred =
+        next.spaces[activeSpaceId]?.lastActiveTabId ?? [...activeTabIds][0]
+      if (preferred && activeTabIds.has(preferred)) {
+        try {
+          await chrome.tabs.update(preferred, { active: true })
+          activatedId = preferred
+        } catch {
+          /* fall through */
+        }
+      }
+      if (activatedId === undefined && activeTabIds.size === 0) {
+        // Active space still had no tabs and there was no scratch —
+        // create one. (Edge case: import into a brand-new empty window.)
+        try {
+          const starter = await chrome.tabs.create({
+            windowId: currentWindowId,
+            active: true,
+          })
+          if (typeof starter.id === 'number') {
+            const tid = starter.id
+            activatedId = tid
+            await updateStore((s) => {
+              s.tabs[tid] = { tabId: tid, windowId: currentWindowId, lastActiveAt: now() }
+              const sp = s.spaces[activeSpaceId]
+              if (!sp) return
+              const root = s.folders[sp.rootFolderId]
+              if (root) root.items.push({ kind: 'tab', tabId: tid })
+            })
+            activeTabIds.add(tid)
+          }
+        } catch {
+          /* nothing more we can do */
+        }
+      }
+
+      // We've decided: if scratch is still set here, the active space
+      // got real tabs and the scratch is dead weight.
+      if (typeof scratchId === 'number') {
+        try {
+          await chrome.tabs.remove(scratchId)
+        } catch {
+          /* already gone */
+        }
+        scratchId = undefined
+      }
+
+      const allInWindow = (await chrome.tabs.query({ windowId: currentWindowId })).filter(
+        (t): t is chrome.tabs.Tab & { id: number } => typeof t.id === 'number',
+      )
+      const tabsApi = chrome.tabs as unknown as {
+        show: (ids: number[]) => Promise<void>
+        hide: (ids: number[]) => Promise<void>
+      }
+      const toShow: number[] = []
+      const toHide: number[] = []
+      for (const t of allInWindow) {
+        if (activeTabIds.has(t.id)) {
+          if ((t as { hidden?: boolean }).hidden) toShow.push(t.id)
+        } else if (t.id !== activatedId) {
+          toHide.push(t.id)
+        }
+      }
+      if (toShow.length > 0) {
+        try {
+          await tabsApi.show(toShow)
+        } catch {
+          /* ignore */
+        }
+      }
+      if (toHide.length > 0) {
+        try {
+          await tabsApi.hide(toHide)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  } finally {
+    importInProgress = false
   }
-  const next: SpaceStore = {
-    spaces,
-    folders,
-    tabs: {},
-    activeSpaceByWindow: {},
-    schemaVersion: CURRENT_SCHEMA_VERSION,
-  }
-  await updateStore(() => next)
 }
 
 // Reassign Spaces whose windowId no longer matches any open Chrome window

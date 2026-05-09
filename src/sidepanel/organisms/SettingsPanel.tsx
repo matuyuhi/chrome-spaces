@@ -446,7 +446,26 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   const handleExport = async () => {
     const store = await sendMessage({ type: 'getStore' })
-    const json = JSON.stringify(store, null, 2)
+    // Snapshot every live Chrome tab's URL/title so import can recreate
+    // them. The SW maintains TabRecord.url/title via onTabCreated +
+    // onTabUpdated, but a fresh query catches anything still loading or
+    // that arrived between events.
+    const liveTabs = await chrome.tabs.query({})
+    const liveById = new Map<number, chrome.tabs.Tab>()
+    for (const t of liveTabs) {
+      if (typeof t.id === 'number') liveById.set(t.id, t)
+    }
+    const enrichedTabs: typeof store.tabs = {}
+    for (const [key, rec] of Object.entries(store.tabs)) {
+      const live = liveById.get(Number(key))
+      enrichedTabs[Number(key)] = {
+        ...rec,
+        url: live?.url || live?.pendingUrl || rec.url,
+        title: live?.title || rec.title,
+      }
+    }
+    const enrichedStore = { ...store, tabs: enrichedTabs }
+    const json = JSON.stringify(enrichedStore, null, 2)
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -568,7 +587,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     }
     if (
       !confirm(
-        'Replace ALL Spaces with the backup file? Your current Spaces will be discarded.\nTab references in the backup are stripped (tabs are session-scoped); folder structure and Live config are preserved.',
+        'Replace ALL Spaces with the backup file? Every tab currently open in this window will be closed, and the tabs from the backup will be reopened in their place. Live folders will repopulate on the next sync.',
       )
     )
       return

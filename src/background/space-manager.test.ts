@@ -66,6 +66,36 @@ describe('space-manager (v2)', () => {
     expect(root?.items.some((it) => it.kind === 'tab' && it.tabId === tab.id)).toBe(true)
   })
 
+  it('registerTab falls back to the lowest-order Space when no active is recorded', async () => {
+    // Simulate Chrome restart: spaces exist in the window but
+    // activeSpaceByWindow is empty (onWindowRemoved cleared it during
+    // shutdown).
+    const a = await createSpace({ name: 'A', color: 'red', windowId: 1 })
+    const b = await createSpace({ name: 'B', color: 'blue', windowId: 1 })
+    // No switchTo: activeSpaceByWindow[1] is unset.
+    const tab = await chrome.tabs.create({ windowId: 1 })
+    await registerTab(tab)
+    const store = await loadStore()
+    // Should land in A (order 0), not B (order 1), and the implicit
+    // active gets persisted.
+    expect(store.folders[a.rootFolderId]?.items).toContainEqual({
+      kind: 'tab',
+      tabId: tab.id,
+    })
+    expect(store.folders[b.rootFolderId]?.items).toEqual([])
+    expect(store.activeSpaceByWindow[1]).toBe(a.id)
+  })
+
+  it('registerTab does nothing when no Space exists in the window', async () => {
+    const tab = await chrome.tabs.create({ windowId: 1 })
+    await registerTab(tab)
+    const store = await loadStore()
+    expect(store.activeSpaceByWindow[1]).toBeUndefined()
+    // TabRecord is still created (so the OrphanBanner can pick it up),
+    // but it isn't pushed into any folder.
+    expect(store.tabs[tab.id!]).toBeDefined()
+  })
+
   it('switchTo hides other Spaces tabs and shows the target tabs', async () => {
     const a = await createSpace({ name: 'A', color: 'red', windowId: 1 })
     const t1 = await chrome.tabs.create({ windowId: 1 })
@@ -377,6 +407,177 @@ describe('space-manager (v2)', () => {
         // @ts-expect-error Intentionally invalid schemaVersion
         importStore({ folders: {}, spaces: {}, schemaVersion: -1 }, 1),
       ).rejects.toThrow(/Schema version mismatch/)
+    })
+
+    it('recreates tabs from backup URLs and remaps ItemRefs', async () => {
+      // Build a backup with two tabs in a space's root.
+      const rootFolderId = 'root-1'
+      const spaceId = 'sp-1'
+      const backup = {
+        spaces: {
+          [spaceId]: {
+            id: spaceId,
+            name: 'Restored',
+            color: 'blue' as const,
+            windowId: 999, // stale
+            order: 0,
+            rootFolderId,
+            createdAt: 1,
+            lastAccessedAt: 1,
+            lastActiveTabId: 101,
+          },
+        },
+        folders: {
+          [rootFolderId]: {
+            id: rootFolderId,
+            name: 'Restored',
+            collapsed: false,
+            items: [
+              { kind: 'tab' as const, tabId: 101 },
+              { kind: 'tab' as const, tabId: 102 },
+            ],
+          },
+        },
+        tabs: {
+          101: { tabId: 101, windowId: 999, url: 'https://example.com/a', title: 'A' },
+          102: { tabId: 102, windowId: 999, url: 'https://example.com/b', title: 'B' },
+        },
+        activeSpaceByWindow: { 999: spaceId },
+        schemaVersion: 3,
+      }
+      // Pretend the user's window currently has 1 dummy tab.
+      await chrome.tabs.create({ windowId: 1, url: 'about:blank' })
+
+      await importStore(backup as never, 1)
+      const store = await loadStore()
+      const root = store.folders[rootFolderId]
+      expect(root?.items).toHaveLength(2)
+      // tabIds must be remapped to fresh ids.
+      const newIds = root!.items
+        .filter((it): it is { kind: 'tab'; tabId: number } => it.kind === 'tab')
+        .map((it) => it.tabId)
+      expect(newIds.every((id) => id !== 101 && id !== 102)).toBe(true)
+      // TabRecord exists for each new id and carries url/title.
+      for (const id of newIds) {
+        expect(store.tabs[id]?.windowId).toBe(1)
+        expect(store.tabs[id]?.url).toMatch(/example\.com/)
+      }
+      // Space rehomed to currentWindowId, and lastActiveTabId remapped.
+      expect(store.spaces[spaceId]?.windowId).toBe(1)
+      expect(store.spaces[spaceId]?.lastActiveTabId).toBe(newIds[0])
+      // activeSpaceByWindow points at currentWindowId.
+      expect(store.activeSpaceByWindow[1]).toBe(spaceId)
+    })
+
+    it('drops tab refs that have no recoverable URL but adopts the scratch tab as a starter', async () => {
+      const rootFolderId = 'root-2'
+      const spaceId = 'sp-2'
+      const backup = {
+        spaces: {
+          [spaceId]: {
+            id: spaceId,
+            name: 'NoUrls',
+            color: 'red' as const,
+            windowId: 999,
+            order: 0,
+            rootFolderId,
+            createdAt: 1,
+            lastAccessedAt: 1,
+          },
+        },
+        folders: {
+          [rootFolderId]: {
+            id: rootFolderId,
+            name: 'NoUrls',
+            collapsed: false,
+            items: [{ kind: 'tab' as const, tabId: 200 }],
+          },
+        },
+        // tab 200 has no `url` — old format.
+        tabs: { 200: { tabId: 200, windowId: 999 } },
+        activeSpaceByWindow: {},
+        schemaVersion: 3,
+      }
+      const scratch = await chrome.tabs.create({ windowId: 1, url: 'about:blank' })
+
+      await importStore(backup as never, 1)
+      const store = await loadStore()
+      // The unrecoverable tab ref was dropped, but the active space
+      // adopted the existing window tab so the window isn't empty.
+      const items = store.folders[rootFolderId]?.items ?? []
+      expect(items).toEqual([{ kind: 'tab', tabId: scratch.id }])
+      expect(store.tabs[scratch.id!]?.windowId).toBe(1)
+    })
+
+    it('rebuilds Live folder managedTabs from saved URLs', async () => {
+      const rootFolderId = 'root-3'
+      const liveFolderId = 'live-1'
+      const spaceId = 'sp-3'
+      const backup = {
+        spaces: {
+          [spaceId]: {
+            id: spaceId,
+            name: 'WithLive',
+            color: 'green' as const,
+            windowId: 999,
+            order: 0,
+            rootFolderId,
+            createdAt: 1,
+            lastAccessedAt: 1,
+          },
+        },
+        folders: {
+          [rootFolderId]: {
+            id: rootFolderId,
+            name: 'WithLive',
+            collapsed: false,
+            items: [{ kind: 'folder' as const, folderId: liveFolderId }],
+          },
+          [liveFolderId]: {
+            id: liveFolderId,
+            name: 'PRs',
+            collapsed: false,
+            items: [{ kind: 'live' as const, externalId: 'org/repo#1' }],
+            live: {
+              source: { type: 'github-prs', preset: 'review-requested' as const },
+              refreshIntervalMin: 0,
+              managedTabs: [
+                {
+                  externalId: 'org/repo#1',
+                  url: 'https://github.com/org/repo/pull/1',
+                  title: 'PR 1',
+                  tabId: 555, // was materialized
+                  addedAt: 1,
+                },
+              ],
+            },
+          },
+        },
+        tabs: {
+          555: {
+            tabId: 555,
+            windowId: 999,
+            url: 'https://github.com/org/repo/pull/1',
+            title: 'PR 1',
+          },
+        },
+        activeSpaceByWindow: { 999: spaceId },
+        schemaVersion: 3,
+      }
+      await chrome.tabs.create({ windowId: 1, url: 'about:blank' })
+
+      await importStore(backup as never, 1)
+      const store = await loadStore()
+      const live = store.folders[liveFolderId]?.live
+      expect(live?.managedTabs).toHaveLength(1)
+      const m = live!.managedTabs[0]
+      expect(m.url).toBe('https://github.com/org/repo/pull/1')
+      expect(typeof m.tabId).toBe('number')
+      expect(m.tabId).not.toBe(555)
+      // 'live' ItemRef on the folder is preserved verbatim.
+      expect(store.folders[liveFolderId]?.items).toEqual([
+        { kind: 'live', externalId: 'org/repo#1' },
+      ])
     })
   })
 })
