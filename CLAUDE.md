@@ -18,7 +18,7 @@ Pinned Node: see `.node-version`. fnm picks it up on `cd`. Vite 8 + rolldown req
 
 ## Architecture
 
-Manifest V3 Chrome extension built with Vite + crxjs. No Web Store release; only unpacked install. Two runtime contexts:
+Manifest V3 Chrome extension built with Vite + crxjs. Published to the Chrome Web Store (extension id `nephboakgdhbknfgjpjcleaddkdkfceh`); also installable as unpacked from `dist/`. Two runtime contexts:
 
 1. **Background service worker** (`src/background/index.ts`) — owns all state. Listens to `chrome.tabs`, `chrome.alarms`, `chrome.commands`, `chrome.contextMenus`, `chrome.windows`, and `chrome.runtime.onMessage`. Routes messages defined in `src/shared/messaging.ts`.
 2. **Side Panel** (`src/sidepanel/`) — React 19 UI in the Chrome Side Panel. Talks to the SW only via `sendMessage` from `src/shared/messaging.ts`; never reads or writes `chrome.storage` directly. The popup that used to exist was deleted.
