@@ -122,6 +122,21 @@ export function peekUndoStack(windowId: number): UndoAction | undefined {
   return getStack(windowId)[0]
 }
 
+/**
+ * Pop the top-of-stack entry only if its kind matches. Used to roll
+ * back an entry recorded just before a now-failed operation (e.g.
+ * recordCloseTab + chrome.tabs.remove that subsequently rejected).
+ * Returns the popped entry or undefined.
+ */
+export function popUndoIfKind(
+  windowId: number,
+  kind: UndoAction['kind'],
+): UndoAction | undefined {
+  const s = getStack(windowId)
+  if (s.length === 0 || s[0]!.kind !== kind) return undefined
+  return s.shift()
+}
+
 // ---- Utilities -----------------------------------------------------------
 
 /** Walk all spaces to find the windowId that owns a given folderId. */

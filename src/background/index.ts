@@ -3,6 +3,7 @@ import {
   onTabAttached,
   onTabCreated,
   onTabRemoved,
+  onTabUpdated,
   onWindowRemoved,
 } from './handlers'
 import { handleCommand, resolveWindowId } from './commands'
@@ -62,6 +63,7 @@ import {
   findWindowIdForFolder,
   findWindowIdForItem,
   peekUndo,
+  popUndoIfKind,
   recordCloseTab,
   recordDeleteFolder,
   recordDeleteSpace,
@@ -201,16 +203,28 @@ async function handleMessage(msg: Message): Promise<unknown> {
     case 'closeTab': {
       const _tabInfo = await chrome.tabs.get(msg.tabId).catch(() => undefined)
       if (_tabInfo && typeof _tabInfo.windowId === 'number') {
+        const _wid = _tabInfo.windowId
+        // Snapshot undo BEFORE remove — recordCloseTab needs the still-
+        // present folder location and chrome.tabs.get to succeed. If
+        // remove fails, roll the entry back so it doesn't refer to a
+        // tab that's still alive (which would duplicate on undo).
         try {
-          await recordCloseTab(msg.tabId, _tabInfo.windowId)
+          await recordCloseTab(msg.tabId, _wid)
         } catch (e) {
           console.error('[Spaces] undo record failed', e)
         }
-        return chrome.tabs.remove(msg.tabId)
+        try {
+          await chrome.tabs.remove(msg.tabId)
+          return
+        } catch (e) {
+          console.warn('[Spaces] chrome.tabs.remove failed; dropping ref', msg.tabId, e)
+          popUndoIfKind(_wid, 'close-tab')
+        }
       }
-      // Tab is no longer alive in Chrome (zombie reference left over from
-      // an SW suspension that missed onTabRemoved). Self-heal by dropping
-      // the stale ref so the X button always succeeds from the user's POV.
+      // Either chrome.tabs.get failed (zombie reference left over from
+      // an SW suspension that missed onTabRemoved, or a stale tabId from
+      // a botched import) or remove failed. Drop the ref so the X button
+      // always succeeds from the user's POV.
       await dropTab(msg.tabId)
       return
     }
@@ -309,6 +323,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.tabs.onAttached.addListener((tabId, info) => {
   void onTabAttached(tabId, info)
+})
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  void onTabUpdated(tabId, changeInfo, tab)
 })
 
 chrome.windows.onRemoved.addListener((windowId) => {

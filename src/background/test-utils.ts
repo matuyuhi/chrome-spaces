@@ -66,11 +66,20 @@ export function setupChromeMock(): ChromeMock {
   const tabsApi = {
     create: vi.fn(async (props: chrome.tabs.CreateProperties) => {
       const id = nextTabId++
+      const windowId = props.windowId ?? 1
+      const active = props.active ?? false
+      // Mirror Chrome: a new active tab deactivates the previously
+      // active tab in the same window.
+      if (active) {
+        for (const other of tabs.values()) {
+          if (other.windowId === windowId) other.active = false
+        }
+      }
       const tab: FakeTab = {
         id,
-        windowId: props.windowId ?? 1,
+        windowId,
         groupId: -1,
-        active: props.active ?? false,
+        active,
         hidden: false,
         url: props.url,
       }

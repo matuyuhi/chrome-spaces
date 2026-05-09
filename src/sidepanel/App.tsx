@@ -10,6 +10,7 @@ import { useHorizontalSwipeSwitcher } from './hooks/useHorizontalSwipeSwitcher'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useMenuController } from './hooks/useMenuController'
 import { useReconcileSweep } from './hooks/useReconcileSweep'
+import { useStoreChangeListener } from './hooks/useStoreChangeListener'
 import { useStoreData } from './hooks/useStoreData'
 import { useTabEventListeners } from './hooks/useTabEventListeners'
 import { PanelHeader } from './organisms/Header'
@@ -77,6 +78,7 @@ export function App() {
 
   useReconcileSweep(refresh, refreshPrefs)
   useTabEventListeners(refresh)
+  useStoreChangeListener(refresh)
   useKeyboardShortcuts({ windowId, refresh, onOpenCommandBar: openCommandBar })
   useHorizontalSwipeSwitcher({
     enabled: view.kind === 'list',

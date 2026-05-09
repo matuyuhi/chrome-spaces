@@ -72,6 +72,11 @@ export interface TabRecord {
   baseUrl?: string
   // Last time this tab was activated. Drives the auto-archive job.
   lastActiveAt?: number
+  // Snapshot of the tab's current URL/title. Maintained on tab create /
+  // update so an exported backup can recreate real Chrome tabs on import.
+  // Optional because pre-snapshot installs and pre-load tabs may lack it.
+  url?: string
+  title?: string
 }
 
 export interface Folder {
