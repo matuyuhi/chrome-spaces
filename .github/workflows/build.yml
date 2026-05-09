@@ -17,17 +17,18 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
+      - uses: oven-sh/setup-bun@v2
+
       - uses: actions/setup-node@v6.4.0
         with:
           node-version-file: .node-version
-          cache: npm
 
-      - run: npm ci
+      - run: bun install --frozen-lockfile
 
       - name: Build extension
         env:
           VITE_GITHUB_CLIENT_ID: ${{ secrets.VITE_GITHUB_CLIENT_ID }}
-        run: npm run build
+        run: bun run build
 
       - name: Package extension zip
         id: pkg

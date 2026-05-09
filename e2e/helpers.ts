@@ -27,7 +27,7 @@ export interface ExtensionContext {
 export async function launchExtension(): Promise<ExtensionContext> {
   await fs.access(path.join(EXTENSION_PATH, 'manifest.json')).catch(() => {
     throw new Error(
-      `dist/manifest.json missing — run \`npm run build\` before E2E tests. Looked at: ${EXTENSION_PATH}`,
+      `dist/manifest.json missing — run \`bun run build\` before E2E tests. Looked at: ${EXTENSION_PATH}`,
     )
   })
 

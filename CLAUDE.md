@@ -4,13 +4,13 @@ Guidance for Claude Code when working in this repo.
 
 ## Commands
 
-- `npm run dev` — Vite dev server with HMR (side panel auto-reloads; SW reloads via `@crxjs/vite-plugin`).
-- `npm run build` — `tsc --noEmit` + `vite build` → `dist/`. Load `dist/` as an unpacked extension at `chrome://extensions/`.
-- `npm test` — `vitest run` (single run). Includes Storybook stories rendered as tests via `@storybook/addon-vitest`.
-- `npm run test:watch` — vitest watch.
-- `npm run storybook` — Storybook 10 dev server on :6006.
-- `npm run build-storybook` — currently fails on Vite 8 + rolldown beta; rely on `dev` for the time being.
-- Single test file: `npx vitest run src/background/live/diff.test.ts`. Filter by name: `npx vitest run -t 'pattern'`.
+- `bun run dev` — Vite dev server with HMR (side panel auto-reloads; SW reloads via `@crxjs/vite-plugin`).
+- `bun run build` — `tsc --noEmit` + `vite build` → `dist/`. Load `dist/` as an unpacked extension at `chrome://extensions/`.
+- `bun test` — `vitest run` (single run). Includes Storybook stories rendered as tests via `@storybook/addon-vitest`.
+- `bun run test:watch` — vitest watch.
+- `bun run storybook` — Storybook 10 dev server on :6006.
+- `bun run build-storybook` — currently fails on Vite 8 + rolldown beta; rely on `dev` for the time being.
+- Single test file: `bunx vitest run src/background/live/diff.test.ts`. Filter by name: `bunx vitest run -t 'pattern'`.
 
 Vitest runs in the `node` environment with Chrome APIs mocked. `src/background/test-utils.ts` exposes `setupChromeMock()` which installs a fake `globalThis.chrome` (`storage.local`/`sync`, `tabs`, `alarms`, `contextMenus`, `windows`) — use it in any test that touches the background module.
 
