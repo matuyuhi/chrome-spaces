@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repo.
 
 - `bun run dev` — Vite dev server with HMR (side panel auto-reloads; SW reloads via `@crxjs/vite-plugin`).
 - `bun run build` — `tsc --noEmit` + `vite build` → `dist/`. Load `dist/` as an unpacked extension at `chrome://extensions/`.
-- `bun test` — `vitest run` (single run). Includes Storybook stories rendered as tests via `@storybook/addon-vitest`.
+- `bun run test` — `vitest run` (single run). Includes Storybook stories rendered as tests via `@storybook/addon-vitest`. **Don't** use `bun test` — that invokes Bun's built-in test runner which lacks vitest globals (`vi.*`) and would also pick up `e2e/`.
 - `bun run test:watch` — vitest watch.
 - `bun run storybook` — Storybook 10 dev server on :6006.
 - `bun run build-storybook` — currently fails on Vite 8 + rolldown beta; rely on `dev` for the time being.
@@ -14,7 +14,7 @@ Guidance for Claude Code when working in this repo.
 
 Vitest runs in the `node` environment with Chrome APIs mocked. `src/background/test-utils.ts` exposes `setupChromeMock()` which installs a fake `globalThis.chrome` (`storage.local`/`sync`, `tabs`, `alarms`, `contextMenus`, `windows`) — use it in any test that touches the background module.
 
-Pinned Node: see `.node-version`. fnm picks it up on `cd`. Vite 8 + rolldown require Node ≥ 20.19 / 22.12.
+Runtime: Bun. The repo no longer pins a Node version — Vite 8 + rolldown's Node ≥ 20.19 / 22.12 floor is satisfied by the Bun runtime in dev / CI / release.
 
 ## Architecture
 
