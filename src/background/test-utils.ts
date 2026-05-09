@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import enMessages from '../../public/_locales/en/messages.json'
+import { applyI18nSubs } from '../shared/i18n'
 
 interface MockArea {
   get: (
@@ -170,11 +171,7 @@ export function setupChromeMock(): ChromeMock {
     getMessage: vi.fn((key: string, subs?: string | string[]) => {
       const entry = i18nMessages[key]
       if (!entry) return ''
-      const list = subs === undefined ? [] : Array.isArray(subs) ? subs : [subs]
-      return entry.message.replace(/\$(\d)/g, (_, d: string) => {
-        const i = Number(d) - 1
-        return i >= 0 && i < list.length ? list[i] : ''
-      })
+      return applyI18nSubs(entry.message, subs)
     }),
   }
 

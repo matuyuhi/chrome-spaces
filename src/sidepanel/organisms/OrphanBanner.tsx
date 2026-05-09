@@ -36,7 +36,7 @@ export function OrphanBanner({
   if (count === 0) return null
   return (
     <Box>
-      <Count>{plural(count, 'orphan_count_one', 'orphan_count_other', count)}</Count>
+      <Count>{plural(count, 'orphan_count_one', 'orphan_count_other')}</Count>
       {spaceName && (
         <LinkButton
           title={plural(
@@ -55,7 +55,6 @@ export function OrphanBanner({
           count,
           'orphan_createNewSpace_title_one',
           'orphan_createNewSpace_title_other',
-          count,
         )}
         onClick={onCreateNewSpace}
       >

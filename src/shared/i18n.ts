@@ -15,7 +15,9 @@ function getApi(): ChromeI18n | undefined {
   return (globalThis as { chrome?: { i18n?: ChromeI18n } }).chrome?.i18n
 }
 
-function applySubstitutions(
+// Exported so that the Vitest / Storybook chrome.i18n.getMessage stubs can
+// share the exact same substitution semantics as the runtime fallback.
+export function applyI18nSubs(
   template: string,
   substitutions?: string | string[],
 ): string {
@@ -40,11 +42,14 @@ export function t(
   const api = getApi()
   if (api?.getMessage) {
     const msg = api.getMessage(key, subs)
-    if (msg) return msg
+    // chrome.i18n.getMessage returns '' for unknown keys; use the bundled
+    // EN fallback in that case. A legitimately empty translation would
+    // also fall through here, but messages.json has no empty entries.
+    if (msg !== '') return msg
   }
   const entry = fallbackMessages[key]
   if (!entry) return key
-  return applySubstitutions(entry.message, subs)
+  return applyI18nSubs(entry.message, subs)
 }
 
 export function plural(
@@ -53,5 +58,7 @@ export function plural(
   otherKey: MessageKey,
   substitutions?: string | string[] | number | number[],
 ): string {
-  return t(count === 1 ? singularKey : otherKey, substitutions)
+  // Default the substitution to `count` so callers don't have to repeat it
+  // in the common `$1` placeholder case.
+  return t(count === 1 ? singularKey : otherKey, substitutions ?? count)
 }

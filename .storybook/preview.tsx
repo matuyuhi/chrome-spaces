@@ -1,6 +1,7 @@
 import type { Preview } from '@storybook/react-vite'
 import { GlobalStyles } from '../src/sidepanel/globalStyles'
 import enMessages from '../public/_locales/en/messages.json'
+import { applyI18nSubs } from '../src/shared/i18n'
 
 // Stub the `chrome.*` extension APIs that components call. Inside the
 // real side panel these dispatch through the SW; in Storybook the chrome
@@ -34,11 +35,7 @@ if (typeof window !== 'undefined' && !(window as unknown as { chrome?: unknown }
       getMessage: (key: string, subs?: string | string[]) => {
         const entry = i18nMessages[key]
         if (!entry) return ''
-        const list = subs === undefined ? [] : Array.isArray(subs) ? subs : [subs]
-        return entry.message.replace(/\$(\d)/g, (_, d: string) => {
-          const i = Number(d) - 1
-          return i >= 0 && i < list.length ? list[i] : ''
-        })
+        return applyI18nSubs(entry.message, subs)
       },
     },
   }

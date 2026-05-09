@@ -57,7 +57,6 @@ export function PanelHeader({
               tabGroupCount,
               'header_convertGroups_one',
               'header_convertGroups_other',
-              tabGroupCount,
             )}
             onClick={onImportTabGroups}
           >
