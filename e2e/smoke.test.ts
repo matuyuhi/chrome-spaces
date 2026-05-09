@@ -12,7 +12,9 @@ describe('side panel — smoke', () => {
   })
 
   afterEach(async () => {
-    await ext.close()
+    if (ext) {
+      await ext.close()
+    }
   })
 
   test('renders the empty state when no Spaces have been created', async () => {
