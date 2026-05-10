@@ -41,7 +41,7 @@ describe('useReconcileSweep', () => {
   })
 
   it('triggers sweep on visibilitychange to visible', async () => {
-    const { unmount } = renderHook(() => useReconcileSweep(refresh, refreshPrefs))
+    renderHook(() => useReconcileSweep(refresh, refreshPrefs))
 
     expect(messaging.sendMessage).toHaveBeenCalledTimes(1)
     expect(refreshPrefs).toHaveBeenCalledTimes(1)
