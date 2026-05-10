@@ -139,28 +139,51 @@ export function popUndoIfKind(
 
 // ---- Utilities -----------------------------------------------------------
 
+const folderWindowIdCache = new WeakMap<
+  Awaited<ReturnType<typeof loadStore>>,
+  Map<FolderId, number>
+>()
+
+function getFolderWindowIdMap(
+  store: Awaited<ReturnType<typeof loadStore>>,
+): Map<FolderId, number> {
+  let map = folderWindowIdCache.get(store)
+  if (!map) {
+    map = new Map<FolderId, number>()
+    const stack: { id: FolderId; windowId: number }[] = []
+
+    for (const sp of Object.values(store.spaces)) {
+      stack.push({ id: sp.rootFolderId, windowId: sp.windowId })
+    }
+
+    const visited = new Set<FolderId>()
+    while (stack.length) {
+      const curr = stack.pop()!
+      if (visited.has(curr.id)) continue
+      visited.add(curr.id)
+
+      map.set(curr.id, curr.windowId)
+
+      const f = store.folders[curr.id]
+      if (!f) continue
+
+      for (const it of f.items) {
+        if (it.kind === 'folder') {
+          stack.push({ id: it.folderId, windowId: curr.windowId })
+        }
+      }
+    }
+    folderWindowIdCache.set(store, map)
+  }
+  return map
+}
+
 /** Walk all spaces to find the windowId that owns a given folderId. */
 export function findWindowIdForFolder(
   store: Awaited<ReturnType<typeof loadStore>>,
   folderId: FolderId,
 ): number | undefined {
-  // BFS from every space root.
-  for (const sp of Object.values(store.spaces)) {
-    const visited = new Set<FolderId>()
-    const queue: FolderId[] = [sp.rootFolderId]
-    while (queue.length) {
-      const id = queue.shift()!
-      if (visited.has(id)) continue
-      visited.add(id)
-      if (id === folderId) return sp.windowId
-      const f = store.folders[id]
-      if (!f) continue
-      for (const it of f.items) {
-        if (it.kind === 'folder') queue.push(it.folderId)
-      }
-    }
-  }
-  return undefined
+  return getFolderWindowIdMap(store).get(folderId)
 }
 
 /** Walk all spaces to find the windowId that owns a given ItemRef. */
