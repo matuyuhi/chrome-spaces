@@ -99,6 +99,26 @@ describe('syncLiveFolder', () => {
     expect(after?.live?.lastSyncError).toMatch(/401/)
   })
 
+  it('records standard errors thrown during fetch', async () => {
+    await setGitHubPat('ghp_test')
+    const space = await createSpace({ name: 'ErrorSpace', color: 'red', windowId: 1 })
+    const live = await createFolder({
+      parentFolderId: space.rootFolderId,
+      name: 'ErrorFolder',
+      live: {
+        source: { type: 'github-prs', preset: 'review-requested' },
+        refreshIntervalMin: 0,
+      },
+    })
+
+    const fakeFetch = vi.fn().mockRejectedValue(new Error('Network failure'))
+    await syncLiveFolder(live.id, fakeFetch as unknown as typeof fetch)
+
+    const after = (await loadStore()).folders[live.id]
+    expect(after?.live?.lastSyncError).toBe('Network failure')
+    expect(after?.live?.lastSyncAt).toBeTypeOf('number')
+  })
+
   it('persists ETag and short-circuits on 304', async () => {
     await setGitHubPat('ghp_test')
     const space = await createSpace({ name: 'E', color: 'red', windowId: 1 })
