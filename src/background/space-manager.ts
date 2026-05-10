@@ -1195,15 +1195,11 @@ export async function validateLiveTabIds(): Promise<void> {
   }
   if (candidates.length === 0) return
   const dead = new Set<number>()
-  await Promise.all(
-    candidates.map(async (id) => {
-      try {
-        await chrome.tabs.get(id)
-      } catch {
-        dead.add(id)
-      }
-    })
-  )
+  const allTabs = await chrome.tabs.query({})
+  const aliveIds = new Set(allTabs.map((t) => t.id))
+  for (const id of candidates) {
+    if (!aliveIds.has(id)) dead.add(id)
+  }
   if (dead.size === 0) return
   await updateStore((s) => {
     for (const f of Object.values(s.folders)) {
