@@ -86,11 +86,3 @@ async function findLiveFolderForTab(tabId: number): Promise<string | undefined> 
   }
   return undefined
 }
-
-export const _ITEM_IDS = {
-  ITEM_PIN,
-  ITEM_UNPIN,
-  ITEM_RESET,
-  ITEM_SYNC_LIVE,
-  ITEM_SYNC_LIVE_ACTION,
-}
