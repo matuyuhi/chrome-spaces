@@ -55,6 +55,29 @@ export function ItemRow({
     )
   }
 
+  return (
+    <TabRow
+      item={item}
+      parentFolderId={parentFolderId}
+      parentIsLive={parentIsLive}
+      indexInParent={indexInParent}
+      depth={depth}
+    />
+  )
+}
+
+interface TabRowProps extends Omit<Props, 'item'> {
+  item: { kind: 'tab'; tabId: number }
+}
+
+function TabRow({
+  item,
+  parentFolderId,
+  parentIsLive,
+  indexInParent,
+  depth,
+}: TabRowProps) {
+  const ctx = useAppCtx()
   const tab = ctx.tabs[item.tabId]
   const tabRecord = ctx.store.tabs[item.tabId]
   const isPinned = !!tabRecord?.baseUrl
