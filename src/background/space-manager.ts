@@ -623,10 +623,6 @@ export async function switchTo(spaceId: SpaceId, windowId?: number): Promise<voi
 
 // ---- Read helpers --------------------------------------------------------
 
-export async function getSpace(id: SpaceId): Promise<Space | undefined> {
-  return (await loadStore()).spaces[id]
-}
-
 export async function listSpaces(windowId?: number): Promise<Space[]> {
   const store = await loadStore()
   const all = Object.values(store.spaces)
