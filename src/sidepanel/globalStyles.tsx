@@ -47,13 +47,30 @@ const styles = css`
   html, body, #root {
     height: 100%;
     margin: 0;
-    background: var(--bg);
     color: var(--fg);
+  }
+
+  /* #root must stay transparent or it would mask the body gradient
+     (we used to set background: var(--bg) on it, which broke the tint). */
+  html {
+    background: var(--bg);
+  }
+  #root {
+    background: transparent;
   }
 
   body {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Active Space ambient tint. App.tsx writes --space-tint (a CSS
+       linear-gradient) when a Space is active; absence falls back to a
+       plain --bg backdrop. */
+    background-color: var(--bg);
+    background-image: var(--space-tint, none);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    background-size: cover;
+    transition: background-image 240ms ease;
   }
 
   button {

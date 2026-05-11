@@ -1,6 +1,6 @@
 import { t } from '../../../shared/i18n'
 import { type Folder } from '../../../shared/types'
-import { EmojiInput } from '../../atoms/EmojiInput'
+import { EmojiPicker } from '../../atoms/EmojiPicker'
 import { MenuBox, MenuDivider, MenuItem, MenuSection } from '../../atoms/Menu'
 
 export function FolderMenu({
@@ -34,7 +34,7 @@ export function FolderMenu({
         </>
       )}
       <MenuSection>{t('menu_icon')}</MenuSection>
-      <EmojiInput initial={folder.emoji} onChange={onEmoji} />
+      <EmojiPicker value={folder.emoji} onChange={onEmoji} />
       <MenuDivider />
       <MenuItem danger onClick={() => onDelete(false)}>
         {t('menu_delete_keepTabs')}

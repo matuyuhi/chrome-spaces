@@ -3,12 +3,11 @@ import { sendMessage } from '../../shared/messaging'
 import { type Space } from '../../shared/types'
 import { useAppCtx } from '../AppContext'
 import { useEditMode } from '../hooks/useEditMode'
-import { COLOR_HEX, tokens } from '../theme'
+import { tokens } from '../theme'
 import { SpaceMenu } from './menus'
 import { FolderView } from './FolderView'
 import { PinnedBar } from './PinnedBar'
 import { IconButton } from '../atoms/IconButton'
-import { ColorDot } from '../atoms/ColorDot'
 import { NameInput } from '../atoms/NameInput'
 import { MoreHorizontal } from '../atoms/icons'
 
@@ -62,7 +61,6 @@ export function SpaceContent({ space }: { space: Space }) {
       }}
     >
       <Header>
-        <ColorDot color={COLOR_HEX[space.color]} size={4} />
         {edit.isEditing ? (
           <NameInput
             autoFocus

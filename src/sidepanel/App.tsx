@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { sendMessage } from '../shared/messaging'
 import { type FolderId } from '../shared/types'
 import { AppCtxProvider, type AppCtx } from './AppContext'
-import { COLORS } from './theme'
+import { COLORS, COLOR_GRADIENT } from './theme'
 import { useBackgroundMessages } from './hooks/useBackgroundMessages'
 import { useDragDropController } from './hooks/useDragDropController'
 import { useHorizontalSwipeSwitcher } from './hooks/useHorizontalSwipeSwitcher'
@@ -87,6 +87,19 @@ export function App() {
     refresh,
   })
   useBackgroundMessages({ windowId, onOpenCommandBar: openCommandBar })
+
+  // Active Space ambient tint — applied to <body> via the --space-tint
+  // CSS variable so the gradient persists across live-create/edit
+  // sub-views and outlives the side-panel React tree.
+  const activeColor =
+    store && windowId !== undefined
+      ? store.spaces[store.activeSpaceByWindow[windowId] ?? '']?.color
+      : undefined
+  useEffect(() => {
+    const tint = activeColor ? COLOR_GRADIENT[activeColor] : ''
+    if (tint) document.body.style.setProperty('--space-tint', tint)
+    else document.body.style.removeProperty('--space-tint')
+  }, [activeColor])
 
   const { openMenu, setOpenMenu } = menu
   const { drag, setDrag, dropPos, setDropPos, finalizeDrop } = dnd

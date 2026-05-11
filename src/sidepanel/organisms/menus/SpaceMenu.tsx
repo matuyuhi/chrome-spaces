@@ -2,7 +2,7 @@ import styled from '@emotion/styled'
 import { t } from '../../../shared/i18n'
 import { type Space, type SpaceColor } from '../../../shared/types'
 import { COLORS, COLOR_HEX, tokens } from '../../theme'
-import { EmojiInput } from '../../atoms/EmojiInput'
+import { EmojiPicker } from '../../atoms/EmojiPicker'
 import { MenuBox, MenuDivider, MenuItem, MenuSection } from '../../atoms/Menu'
 
 const ColorGrid = styled.div`
@@ -46,7 +46,7 @@ export function SpaceMenu({
     <MenuBox role="menu" onClick={(e) => e.stopPropagation()}>
       <MenuItem onClick={onRename}>{t('menu_rename')}</MenuItem>
       <MenuSection>{t('menu_icon')}</MenuSection>
-      <EmojiInput initial={space.emoji} onChange={onEmoji} />
+      <EmojiPicker value={space.emoji} onChange={onEmoji} />
       <MenuSection>{t('menu_color')}</MenuSection>
       <ColorGrid>
         {COLORS.map((c) => (

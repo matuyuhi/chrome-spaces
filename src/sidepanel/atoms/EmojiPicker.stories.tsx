@@ -1,25 +1,25 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
-import { EmojiInput } from './EmojiInput'
+import { EmojiPicker } from './EmojiPicker'
 
-const meta: Meta<typeof EmojiInput> = {
-  title: 'atoms/EmojiInput',
-  component: EmojiInput,
+const meta: Meta<typeof EmojiPicker> = {
+  title: 'atoms/EmojiPicker',
+  component: EmojiPicker,
 }
 export default meta
 
-type Story = StoryObj<typeof EmojiInput>
+type Story = StoryObj<typeof EmojiPicker>
 
 export const Empty: Story = {
   render: () => {
     const [v, setV] = useState<string | undefined>()
-    return <EmojiInput initial={v} onChange={setV} />
+    return <EmojiPicker value={v} onChange={setV} />
   },
 }
 
 export const Preset: Story = {
   render: () => {
     const [v, setV] = useState<string | undefined>('🚀')
-    return <EmojiInput initial={v} onChange={setV} />
+    return <EmojiPicker value={v} onChange={setV} />
   },
 }
