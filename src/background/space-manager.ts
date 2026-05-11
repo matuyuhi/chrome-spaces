@@ -27,9 +27,6 @@ const uid = (): string => crypto.randomUUID()
 // each, racing with our final store overwrite. Set this flag for the
 // duration of the import; handlers early-return while it's set.
 let importInProgress = false
-export function isImportInProgress(): boolean {
-  return importInProgress
-}
 
 export async function recordTabUrl(
   tabId: number,
