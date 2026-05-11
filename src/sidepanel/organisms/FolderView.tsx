@@ -74,12 +74,237 @@ interface Props {
   isRoot?: boolean
 }
 
-export function FolderView({ folder, depth, isRoot }: Props) {
+interface FolderHeaderRowProps {
+  folder: Folder
+  depth: number
+  collapsed: boolean
+  setCollapsed: (collapsed: boolean) => void
+  isLive: boolean
+  liveError?: string
+  isDropInto: boolean
+  acceptsInto: boolean
+  handleAddFolder: () => Promise<void>
+}
+
+function FolderHeaderRow({
+  folder,
+  depth,
+  collapsed,
+  setCollapsed,
+  isLive,
+  liveError,
+  isDropInto,
+  acceptsInto,
+  handleAddFolder,
+}: FolderHeaderRowProps) {
   const ctx = useAppCtx()
-  const [collapsed, setCollapsed] = useState(folder.collapsed && !isRoot)
   const edit = useEditMode(folder.name)
   const [syncing, setSyncing] = useState(false)
   const menuId = `folder:${folder.id}`
+
+  return (
+    <FolderHeaderBox
+      isDropInto={isDropInto}
+      isLive={isLive}
+      style={{ paddingLeft: depth * 12 }}
+      draggable
+      onDoubleClick={async (e) => {
+        // Skip when the dblclick lands on an interactive control
+        // (toggle / sync / menu button or the rename input).
+        if ((e.target as HTMLElement).closest('button, input')) return
+        if (isLive) return
+        e.stopPropagation()
+        try {
+          const tab = await chrome.tabs.create({
+            windowId: ctx.windowId,
+            active: true,
+          })
+          if (typeof tab.id === 'number') {
+            await sendMessage({
+              type: 'addTabsToFolder',
+              folderId: folder.id,
+              tabIds: [tab.id],
+            })
+            await ctx.refresh()
+          }
+        } catch (err) {
+          ctx.onError(err)
+        }
+      }}
+      onDragStart={(e) => {
+        e.stopPropagation()
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', folder.id)
+        ctx.setDrag({
+          kind: 'item',
+          item: { kind: 'folder', folderId: folder.id },
+        })
+      }}
+      onDragEnd={() => {
+        ctx.setDrag(undefined)
+        ctx.setDropPos(undefined)
+      }}
+      onDragOver={
+        acceptsInto
+          ? (e) => {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              const next: DropPos = { kind: 'into-folder', folderId: folder.id }
+              if (!ctx.dropPos || dropPosKey(ctx.dropPos) !== dropPosKey(next)) {
+                ctx.setDropPos(next)
+              }
+            }
+          : undefined
+      }
+      onDrop={
+        acceptsInto
+          ? (e) => {
+              e.preventDefault()
+              void ctx.finalizeDrop()
+            }
+          : undefined
+      }
+    >
+      <IconButton
+        onClick={async () => {
+          const next = !collapsed
+          setCollapsed(next)
+          try {
+            await sendMessage({
+              type: 'setFolderCollapsed',
+              folderId: folder.id,
+              collapsed: next,
+            })
+          } catch (e) {
+            ctx.onError(e)
+          }
+        }}
+        aria-label={collapsed ? 'Expand folder' : 'Collapse folder'}
+      >
+        {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+      </IconButton>
+      {edit.isEditing ? (
+        <NameInput
+          small
+          autoFocus
+          value={edit.draft}
+          onChange={(e) => edit.setDraft(e.target.value)}
+          onBlur={async () => {
+            edit.stop()
+            if (edit.draft.trim() && edit.draft !== folder.name) {
+              try {
+                await sendMessage({
+                  type: 'renameFolder',
+                  folderId: folder.id,
+                  name: edit.draft.trim(),
+                })
+                await ctx.refresh()
+              } catch (e) {
+                ctx.onError(e)
+              }
+            }
+          }}
+          onKeyDown={edit.handleKeyDown}
+        />
+      ) : (
+        <FolderName>
+          {isLive && (
+            <RunCat
+              size={24}
+              hasError={!!liveError}
+              title={liveError ?? 'Live folder'}
+            />
+          )}
+          {folder.emoji ? `${folder.emoji} ` : null}
+          {folder.name}
+          {isLive && liveError && (
+            <LiveErrorBadge title={liveError}>
+              <AlertTriangle size={12} />
+            </LiveErrorBadge>
+          )}
+        </FolderName>
+      )}
+      {isLive && (
+        <SyncButton
+          syncing={syncing}
+          title={liveError ?? 'Sync now'}
+          onClick={async () => {
+            if (syncing) return
+            setSyncing(true)
+            try {
+              await sendMessage({ type: 'syncLiveFolder', folderId: folder.id })
+              await ctx.refresh()
+            } catch (e) {
+              ctx.onError(e)
+            } finally {
+              setTimeout(() => setSyncing(false), 350)
+            }
+          }}
+        />
+      )}
+      <IconButton
+        onClick={(e) => {
+          e.stopPropagation()
+          ctx.setOpenMenu(ctx.openMenu === menuId ? undefined : menuId)
+        }}
+        aria-label="Folder menu"
+      >
+        <MoreHorizontal size={14} />
+      </IconButton>
+      {ctx.openMenu === menuId && (
+        <FolderMenu
+          folder={folder}
+          onClose={() => ctx.setOpenMenu(undefined)}
+          onRename={() => {
+            edit.start()
+            ctx.setOpenMenu(undefined)
+          }}
+          onEmoji={async (emoji) => {
+            try {
+              await sendMessage({
+                type: 'setFolderEmoji',
+                folderId: folder.id,
+                emoji,
+              })
+              await ctx.refresh()
+            } catch (e) {
+              ctx.onError(e)
+            }
+          }}
+          onEditLive={() => {
+            ctx.setOpenMenu(undefined)
+            ctx.onEditLive(folder.id)
+          }}
+          onAddFolder={() => {
+            ctx.setOpenMenu(undefined)
+            void handleAddFolder()
+          }}
+          onAddLive={() => {
+            ctx.setOpenMenu(undefined)
+            ctx.onCreateLive(folder.id)
+          }}
+          onDelete={async (closeTabs) => {
+            try {
+              await sendMessage({
+                type: 'deleteFolder',
+                folderId: folder.id,
+                closeTabs,
+              })
+              ctx.setOpenMenu(undefined)
+              await ctx.refresh()
+            } catch (e) {
+              ctx.onError(e)
+            }
+          }}
+        />
+      )}
+    </FolderHeaderBox>
+  )
+}
+
+export function FolderView({ folder, depth, isRoot }: Props) {
+  const ctx = useAppCtx()
+  const [collapsed, setCollapsed] = useState(folder.collapsed && !isRoot)
 
   const liveError = folder.live?.lastSyncError
   const isLive = !!folder.live
@@ -117,202 +342,17 @@ export function FolderView({ folder, depth, isRoot }: Props) {
   return (
     <FolderBox className="folder-box" isDragging={isDraggingThis}>
       {!isRoot && (
-        <FolderHeaderBox
-          isDropInto={isDropInto}
+        <FolderHeaderRow
+          folder={folder}
+          depth={depth}
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
           isLive={isLive}
-          style={{ paddingLeft: depth * 12 }}
-          draggable
-          onDoubleClick={async (e) => {
-            // Skip when the dblclick lands on an interactive control
-            // (toggle / sync / menu button or the rename input).
-            if ((e.target as HTMLElement).closest('button, input')) return
-            if (isLive) return
-            e.stopPropagation()
-            try {
-              const tab = await chrome.tabs.create({
-                windowId: ctx.windowId,
-                active: true,
-              })
-              if (typeof tab.id === 'number') {
-                await sendMessage({
-                  type: 'addTabsToFolder',
-                  folderId: folder.id,
-                  tabIds: [tab.id],
-                })
-                await ctx.refresh()
-              }
-            } catch (err) {
-              ctx.onError(err)
-            }
-          }}
-          onDragStart={(e) => {
-            e.stopPropagation()
-            e.dataTransfer.effectAllowed = 'move'
-            e.dataTransfer.setData('text/plain', folder.id)
-            ctx.setDrag({
-              kind: 'item',
-              item: { kind: 'folder', folderId: folder.id },
-            })
-          }}
-          onDragEnd={() => {
-            ctx.setDrag(undefined)
-            ctx.setDropPos(undefined)
-          }}
-          onDragOver={
-            acceptsInto
-              ? (e) => {
-                  e.preventDefault()
-                  e.dataTransfer.dropEffect = 'move'
-                  const next: DropPos = { kind: 'into-folder', folderId: folder.id }
-                  if (!ctx.dropPos || dropPosKey(ctx.dropPos) !== dropPosKey(next)) {
-                    ctx.setDropPos(next)
-                  }
-                }
-              : undefined
-          }
-          onDrop={
-            acceptsInto
-              ? (e) => {
-                  e.preventDefault()
-                  void ctx.finalizeDrop()
-                }
-              : undefined
-          }
-        >
-          <IconButton
-            onClick={async () => {
-              const next = !collapsed
-              setCollapsed(next)
-              try {
-                await sendMessage({
-                  type: 'setFolderCollapsed',
-                  folderId: folder.id,
-                  collapsed: next,
-                })
-              } catch (e) {
-                ctx.onError(e)
-              }
-            }}
-            aria-label={collapsed ? 'Expand folder' : 'Collapse folder'}
-          >
-            {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-          </IconButton>
-          {edit.isEditing ? (
-            <NameInput
-              small
-              autoFocus
-              value={edit.draft}
-              onChange={(e) => edit.setDraft(e.target.value)}
-              onBlur={async () => {
-                edit.stop()
-                if (edit.draft.trim() && edit.draft !== folder.name) {
-                  try {
-                    await sendMessage({
-                      type: 'renameFolder',
-                      folderId: folder.id,
-                      name: edit.draft.trim(),
-                    })
-                    await ctx.refresh()
-                  } catch (e) {
-                    ctx.onError(e)
-                  }
-                }
-              }}
-              onKeyDown={edit.handleKeyDown}
-            />
-          ) : (
-            <FolderName>
-              {isLive && (
-                <RunCat
-                  size={24}
-                  hasError={!!liveError}
-                  title={liveError ?? 'Live folder'}
-                />
-              )}
-              {folder.emoji ? `${folder.emoji} ` : null}
-              {folder.name}
-              {isLive && liveError && (
-                <LiveErrorBadge title={liveError}>
-                  <AlertTriangle size={12} />
-                </LiveErrorBadge>
-              )}
-            </FolderName>
-          )}
-          {isLive && (
-            <SyncButton
-              syncing={syncing}
-              title={liveError ?? 'Sync now'}
-              onClick={async () => {
-                if (syncing) return
-                setSyncing(true)
-                try {
-                  await sendMessage({ type: 'syncLiveFolder', folderId: folder.id })
-                  await ctx.refresh()
-                } catch (e) {
-                  ctx.onError(e)
-                } finally {
-                  setTimeout(() => setSyncing(false), 350)
-                }
-              }}
-            />
-          )}
-          <IconButton
-            onClick={(e) => {
-              e.stopPropagation()
-              ctx.setOpenMenu(ctx.openMenu === menuId ? undefined : menuId)
-            }}
-            aria-label="Folder menu"
-          >
-            <MoreHorizontal size={14} />
-          </IconButton>
-          {ctx.openMenu === menuId && (
-            <FolderMenu
-              folder={folder}
-              onClose={() => ctx.setOpenMenu(undefined)}
-              onRename={() => {
-                edit.start()
-                ctx.setOpenMenu(undefined)
-              }}
-              onEmoji={async (emoji) => {
-                try {
-                  await sendMessage({
-                    type: 'setFolderEmoji',
-                    folderId: folder.id,
-                    emoji,
-                  })
-                  await ctx.refresh()
-                } catch (e) {
-                  ctx.onError(e)
-                }
-              }}
-              onEditLive={() => {
-                ctx.setOpenMenu(undefined)
-                ctx.onEditLive(folder.id)
-              }}
-              onAddFolder={() => {
-                ctx.setOpenMenu(undefined)
-                void handleAddFolder()
-              }}
-              onAddLive={() => {
-                ctx.setOpenMenu(undefined)
-                ctx.onCreateLive(folder.id)
-              }}
-              onDelete={async (closeTabs) => {
-                try {
-                  await sendMessage({
-                    type: 'deleteFolder',
-                    folderId: folder.id,
-                    closeTabs,
-                  })
-                  ctx.setOpenMenu(undefined)
-                  await ctx.refresh()
-                } catch (e) {
-                  ctx.onError(e)
-                }
-              }}
-            />
-          )}
-        </FolderHeaderBox>
+          liveError={liveError}
+          isDropInto={isDropInto}
+          acceptsInto={acceptsInto}
+          handleAddFolder={handleAddFolder}
+        />
       )}
 
       {!collapsed && (
