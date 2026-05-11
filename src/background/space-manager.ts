@@ -99,10 +99,41 @@ function detachTabsFromOtherSpaces(
 ): void {
   if (tabIds.length === 0) return
   const claim = new Set(tabIds)
-  for (const sp of Object.values(s.spaces)) {
-    if (sp.id === ownerSpaceId) continue
-    for (const folder of walkFolders(s, sp.rootFolderId)) {
-      folder.items = folder.items.filter(
+
+  const ownerSpace = s.spaces[ownerSpaceId]
+  const ownerFolders = new Set<string>()
+  if (ownerSpace) {
+    const stack = [ownerSpace.rootFolderId]
+    while (stack.length > 0) {
+      const id = stack.pop()!
+      ownerFolders.add(id)
+      const f = s.folders[id]
+      if (f) {
+        for (let i = 0; i < f.items.length; i++) {
+          const item = f.items[i]
+          if (item.kind === 'folder') stack.push(item.folderId)
+        }
+      }
+    }
+  }
+
+  const folders = Object.values(s.folders)
+  for (let i = 0; i < folders.length; i++) {
+    const folder = folders[i]
+    if (ownerFolders.has(folder.id)) continue
+
+    let hasClaimed = false
+    const items = folder.items
+    for (let j = 0; j < items.length; j++) {
+      const it = items[j]
+      if (it.kind === 'tab' && claim.has(it.tabId)) {
+        hasClaimed = true
+        break
+      }
+    }
+
+    if (hasClaimed) {
+      folder.items = items.filter(
         (it) => !(it.kind === 'tab' && claim.has(it.tabId)),
       )
     }
