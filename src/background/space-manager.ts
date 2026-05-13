@@ -598,12 +598,24 @@ export async function switchTo(spaceId: SpaceId, windowId?: number): Promise<voi
       if (typeof created.id === 'number') {
         activatedId = created.id
         targetTabIds.add(created.id)
+        // chrome.tabs.onCreated → registerTab runs concurrently and (now
+        // that activeSpaceByWindow points at this Space) appends the new
+        // tab into root.items too. Without this guard the two writers
+        // each push, producing a duplicate item entry every time switchTo
+        // runs through the starter path.
         await updateStore((s) => {
           s.tabs[created.id!] = { tabId: created.id!, windowId: winId }
           const sp = s.spaces[spaceId]
           if (!sp) return
           const root = s.folders[sp.rootFolderId]
-          if (root) root.items.push({ kind: 'tab', tabId: created.id! })
+          if (!root) return
+          if (
+            !root.items.some(
+              (it) => it.kind === 'tab' && it.tabId === created.id!,
+            )
+          ) {
+            root.items.push({ kind: 'tab', tabId: created.id! })
+          }
         })
       }
     } catch {
@@ -1091,15 +1103,25 @@ export async function reattachOrphanSpaces(): Promise<void> {
   })
 }
 
-// Used by reconcile to drop stale tab refs.
+// Used by reconcile to drop stale tab refs. Also deduplicates tab refs
+// within each folder — race-condition fallouts (e.g. a previous
+// registerTab vs switchTo starter push) can leave the same tabId in
+// folder.items more than once, which surfaces as ghost rows in the side
+// panel that keep replicating across switches. Keeping the dedup pass
+// here means every reconcile sweep (panel mount + visibility change)
+// self-heals existing damage even if the original racer is long gone.
 export function pruneDeadTabs(s: SpaceStore, liveTabIds: Set<number>): boolean {
   let changed = false
   for (const f of Object.values(s.folders)) {
     const before = f.items.length
+    const seenTabs = new Set<number>()
     f.items = f.items.filter((it) => {
       if (it.kind === 'folder') return true
       if (it.kind === 'live') return true
-      return liveTabIds.has(it.tabId)
+      if (!liveTabIds.has(it.tabId)) return false
+      if (seenTabs.has(it.tabId)) return false
+      seenTabs.add(it.tabId)
+      return true
     })
     if (f.items.length !== before) changed = true
     if (f.live) {
