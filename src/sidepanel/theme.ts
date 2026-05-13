@@ -53,24 +53,23 @@ export const COLOR_HEX: Record<SpaceColor, string> = {
   orange: '#fa7b17',
 }
 
-// Arc-style ambient gradient applied to the side panel root for the
-// active Space. The translucent stops let the underlying --bg show
-// through, so the same gradient stays readable in both light and dark
-// modes without re-keying per scheme.
+// Arc-style ambient body fill for the active Space. The non-grey
+// entries are saturated, opaque gradients (lighter top-left → darker
+// bottom-right) so the whole panel reads as that color, the way Arc's
+// sidebar does. White text on these passes contrast at all hues.
+// grey stays translucent — the palette isn't swapped for it, so it
+// rides on the user's prefers-color-scheme rather than forcing a
+// colored fill.
 export const COLOR_GRADIENT: Record<SpaceColor, string> = {
-  grey: 'linear-gradient(155deg, rgba(154, 160, 166, 0.32) 0%, rgba(154, 160, 166, 0) 60%)',
-  blue: 'linear-gradient(155deg, rgba(106, 183, 255, 0.40) 0%, rgba(26, 115, 232, 0.10) 70%)',
-  red: 'linear-gradient(155deg, rgba(255, 138, 128, 0.40) 0%, rgba(217, 48, 37, 0.10) 70%)',
-  yellow:
-    'linear-gradient(155deg, rgba(255, 213, 79, 0.45) 0%, rgba(249, 171, 0, 0.10) 70%)',
-  green:
-    'linear-gradient(155deg, rgba(102, 187, 106, 0.40) 0%, rgba(24, 128, 56, 0.10) 70%)',
-  pink: 'linear-gradient(155deg, rgba(255, 128, 171, 0.40) 0%, rgba(208, 24, 132, 0.10) 70%)',
-  purple:
-    'linear-gradient(155deg, rgba(179, 136, 255, 0.40) 0%, rgba(147, 52, 230, 0.10) 70%)',
-  cyan: 'linear-gradient(155deg, rgba(77, 208, 225, 0.40) 0%, rgba(0, 123, 131, 0.10) 70%)',
-  orange:
-    'linear-gradient(155deg, rgba(255, 183, 77, 0.45) 0%, rgba(250, 123, 23, 0.10) 70%)',
+  grey: 'linear-gradient(155deg, rgba(154, 160, 166, 0.45) 0%, rgba(154, 160, 166, 0.22) 100%)',
+  blue: 'linear-gradient(155deg, #6886c1 0%, #4f6aa3 100%)',
+  red: 'linear-gradient(155deg, #c07676 0%, #9d5454 100%)',
+  yellow: 'linear-gradient(155deg, #c09150 0%, #9b6f28 100%)',
+  green: 'linear-gradient(155deg, #6ca072 0%, #4d7d54 100%)',
+  pink: 'linear-gradient(155deg, #c789a8 0%, #a36684 100%)',
+  purple: 'linear-gradient(155deg, #9078bf 0%, #6f57a0 100%)',
+  cyan: 'linear-gradient(155deg, #5e8c95 0%, #406f78 100%)',
+  orange: 'linear-gradient(155deg, #c08562 0%, #9a663a 100%)',
 }
 
 export const FONT_SCALE: Record<UIFontSize, number> = {

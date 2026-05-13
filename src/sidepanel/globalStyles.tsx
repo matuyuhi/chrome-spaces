@@ -40,6 +40,30 @@ const styles = css`
     }
   }
 
+  /* When the active Space has a non-grey tint, the body is painted with
+     an opaque saturated gradient (theme.ts COLOR_GRADIENT). This block
+     gives surfaces an Arc-style frosted look: white text, translucent
+     white buttons/pills that let the body color show through, and a
+     near-black opaque --bg for menus/popovers so they stay readable
+     when they float over the saturated body. grey (and the no-tint
+     state) keeps the user's prefers-color-scheme. App.tsx writes
+     data-space-tint on <html>; the attribute selector outranks the
+     :root @media block on specificity. */
+  html[data-space-tint]:not([data-space-tint='grey']) {
+    --fg: #ffffff;
+    --muted: rgba(255, 255, 255, 0.78);
+    --subtle: rgba(255, 255, 255, 0.58);
+    --border: rgba(255, 255, 255, 0.20);
+    --bg: #15171c;
+    --bg-soft: rgba(255, 255, 255, 0.12);
+    --bg-hover: rgba(255, 255, 255, 0.22);
+    --bg-active: rgba(255, 255, 255, 0.32);
+    --accent: #ffffff;
+    --accent-soft: rgba(255, 255, 255, 0.20);
+    --danger: #ffd2cc;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.22);
+  }
+
   *, *::before, *::after {
     box-sizing: border-box;
   }
