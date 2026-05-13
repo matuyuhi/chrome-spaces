@@ -91,14 +91,33 @@ export function App() {
   // Active Space ambient tint — applied to <body> via the --space-tint
   // CSS variable so the gradient persists across live-create/edit
   // sub-views and outlives the side-panel React tree.
-  const activeColor =
-    store && windowId !== undefined
-      ? store.spaces[store.activeSpaceByWindow[windowId] ?? '']?.color
-      : undefined
+  //
+  // We mirror the same activeId-or-spaces[0] fallback the render uses
+  // (see `active` below). Otherwise a freshly created Space — which
+  // doesn't call switchTo and so leaves activeSpaceByWindow untouched
+  // — would render its content but skip the tint until the user
+  // clicks its pill.
+  const activeColor = (() => {
+    if (!store || windowId === undefined) return undefined
+    const windowSpaces = Object.values(store.spaces)
+      .filter((s) => s.windowId === windowId)
+      .sort((a, b) => a.order - b.order)
+    const activeId = store.activeSpaceByWindow[windowId]
+    const active = windowSpaces.find((s) => s.id === activeId) ?? windowSpaces[0]
+    return active?.color
+  })()
   useEffect(() => {
     const tint = activeColor ? COLOR_GRADIENT[activeColor] : ''
     if (tint) document.body.style.setProperty('--space-tint', tint)
     else document.body.style.removeProperty('--space-tint')
+
+    // The CSS rule in globalStyles keyed off html[data-space-tint] flips
+    // the palette to light-mode values when a colored tint is active, so
+    // dark text reads against the bright pastel body. grey is excluded
+    // by the selector; the no-tint state removes the attribute entirely.
+    const root = document.documentElement
+    if (activeColor) root.setAttribute('data-space-tint', activeColor)
+    else root.removeAttribute('data-space-tint')
   }, [activeColor])
 
   const { openMenu, setOpenMenu } = menu
