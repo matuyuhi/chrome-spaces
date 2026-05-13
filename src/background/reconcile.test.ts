@@ -63,6 +63,31 @@ describe('reconcile', () => {
     expect(store.folders[space.rootFolderId].items.filter(it => it.kind === 'tab' && it.tabId === t1.id!)).toEqual([])
   })
 
+  it('dedupes duplicate tab refs within a folder even when no tabs are dead', async () => {
+    const space = await createSpace({ name: 'S', color: 'blue', windowId: 1 })
+    const t1 = await chrome.tabs.create({ windowId: 1 })
+    await registerTab(t1)
+
+    // Simulate the race that this fix targets: the same live tabId
+    // appears twice in root.items. (In the field this comes from
+    // switchTo's starter push running concurrently with
+    // chrome.tabs.onCreated → registerTab.)
+    const dirty = await loadStore()
+    dirty.folders[space.rootFolderId].items.push({ kind: 'tab', tabId: t1.id! })
+    dirty.folders[space.rootFolderId].items.push({ kind: 'tab', tabId: t1.id! })
+    await chrome.storage.local.set({ spaceStore: dirty })
+
+    const result = await reconcile()
+    // No dead tabs to report, but we still wrote the dedup-ed store.
+    expect(result.dropped).toBe(0)
+
+    const store = await loadStore()
+    const tabRefs = store.folders[space.rootFolderId].items.filter(
+      (it) => it.kind === 'tab' && it.tabId === t1.id!,
+    )
+    expect(tabRefs).toHaveLength(1)
+  })
+
   describe('reconcileIfStale', () => {
     it('throttles reconcile calls within 30 seconds', async () => {
       vi.useFakeTimers()

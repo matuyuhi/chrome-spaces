@@ -228,8 +228,19 @@ async function handleMessage(msg: Message): Promise<unknown> {
       await dropTab(msg.tabId)
       return
     }
-    case 'activateTab':
-      return chrome.tabs.update(msg.tabId, { active: true })
+    case 'activateTab': {
+      try {
+        await chrome.tabs.update(msg.tabId, { active: true })
+        return
+      } catch (e) {
+        // Stale ref: the tab is gone but folder.items still points at
+        // its id. Drop the ref so the next refresh removes the ghost
+        // row, then surface a generic "missing tab" error to the panel.
+        console.warn('[Spaces] activateTab failed; dropping ref', msg.tabId, e)
+        await dropTab(msg.tabId)
+        throw new Error('Tab is no longer available')
+      }
+    }
     case 'reconcile':
       return reconcileIfStale()
     case 'pinUrl':
