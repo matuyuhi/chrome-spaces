@@ -724,18 +724,29 @@ export async function addTabsToFolder(
 export async function importChromeTabGroups(windowId: number): Promise<Space[]> {
   const groups = await chrome.tabGroups.query({ windowId })
   const created: Space[] = []
+
+  const allTabs = await chrome.tabs.query({ windowId })
+  const tabsByGroupId = new Map<number, chrome.tabs.Tab[]>()
+  for (const tab of allTabs) {
+    if (tab.groupId !== undefined && tab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE) {
+      let groupTabs = tabsByGroupId.get(tab.groupId)
+      if (!groupTabs) {
+        groupTabs = []
+        tabsByGroupId.set(tab.groupId, groupTabs)
+      }
+      groupTabs.push(tab)
+    }
+  }
+
+  const store = await loadStore()
+  const claimed = new Set<number>()
+  for (const f of Object.values(store.folders)) {
+    for (const it of f.items) if (it.kind === 'tab') claimed.add(it.tabId)
+  }
+
   for (const g of groups) {
-    let groupTabs: chrome.tabs.Tab[]
-    try {
-      groupTabs = await chrome.tabs.query({ groupId: g.id })
-    } catch {
-      continue
-    }
-    const store = await loadStore()
-    const claimed = new Set<number>()
-    for (const f of Object.values(store.folders)) {
-      for (const it of f.items) if (it.kind === 'tab') claimed.add(it.tabId)
-    }
+    const groupTabs = tabsByGroupId.get(g.id) || []
+
     const tabIds = groupTabs
       .map((t) => t.id)
       .filter((id): id is number => typeof id === 'number' && !claimed.has(id))
