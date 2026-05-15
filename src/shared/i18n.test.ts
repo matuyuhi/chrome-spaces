@@ -48,8 +48,8 @@ describe('i18n', () => {
     })
 
     it('passes substitutions array overriding default count', () => {
-      expect(plural(1, 'orphan_addToCurrent_title_one', 'orphan_addToCurrent_title_other', [1, 'Work'])).toBe('Add 1 tab to "Work"')
-      expect(plural(3, 'orphan_addToCurrent_title_one', 'orphan_addToCurrent_title_other', [3, 'Work'])).toBe('Add 3 tabs to "Work"')
+      expect(plural(1, 'orphan_addToCurrent_title_one', 'orphan_addToCurrent_title_other', ['1', 'Work'])).toBe('Add 1 tab to "Work"')
+      expect(plural(3, 'orphan_addToCurrent_title_one', 'orphan_addToCurrent_title_other', ['3', 'Work'])).toBe('Add 3 tabs to "Work"')
     })
 
     it('passes specific string as substitution', () => {
